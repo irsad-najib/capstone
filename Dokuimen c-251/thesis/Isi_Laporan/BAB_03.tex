@@ -1,0 +1,68 @@
+
+
+Salah satu kemampuan yang harus dimiliki oleh seorang Sarjana Teknik adalah kemampuan menganalisis sumber-sumber pustaka. Oleh karena itu, di dalam dokuman C-251 ini, mahasiswa perlu melakukan studi pustaka dan menuliskannya sampai kepada level kedalaman dan detail yang memadai. Sebelum melakukan analisis pustaka, uraikan lagi apa saja permasalahan yang ingin Anda selesaikan di dalam \textit{capstone} ini. Dari permasalahan tersebut, carilah literatur yang sudah pernah membahas dan menyelesaikan masalah yang sama, dan pilihkan pustaka kunci yang akan Anda adopsi untuk membantu menyelesaikan Anda.
+
+Studi pustaka haruslah berhubungan erat dengan topik yang dibahas, sehingga dapat membantu perancangan atas permasalahan yang sudah didefiniskan. Analisis pustaka dibuat setajam mungkin dan seringkas mungkin dengan membahas sedikitnya tiga pustaka kunci dan membandingkan keuntungan dan kerugiannya. Mahasiswa selanjutnya sangat disarankan untuk memformulasikan pemodelan sistemnya baik secara matematis, teknis atau pemodelan lain yang bisa diterima. Setelah itu, tim mahasiswa diminta memberikan dasar teori singkat sehingga pembaca dapat memahami analisis pustaka yang dibuat. Kelompok \textit{capstone} diharuskan memilih metode kandidat beserta konsep atau teorinya, serta memverifikasinya melalui simulasi pendahuluan untuk menentukan apakah desain yang diusulkan benar-benar layak diimplementasikan di dalam C-501. \textcolor{black}{Di bagian ini, tunjukkan bahwa masalah yang dipilih memiliki solusi terbuka (\textit{open-ended solution}), yaitu memiliki minimal tiga solusi potensial yang ada di literatur.}
+
+Mahasiswa juga dituntut untuk mengevaluasi solusi-solusi yang mungkin berdasarkan proses dan standar keteknikan. \textbf{Mahasiswa tidak diperkenankan hanya menyajikan solusi yang didapat di literatur. Mahasiswa perlu menunjukkan keunggulan dan kelemahan setiap solusi tersebut}. Untuk mencapai poin tersebut, di Bab ini, mahasiswa harus mengacu pada minimal 10 buah referensi dalam mengevaluasi solusi-solusi potensial dari permasalahan yang dipilih. Literatur sebaiknya diambilkan dari sumber ilmiah seperti jurnal, standard, ataupun \textit{technical report}.
+
+Buatlah analisis yang mendalam dan jika perlu disimulasikan metodenya untuk menyelesaikan permasalahan Anda. Uraikan secara ringkas sumber-sumber yang membahas berbagai kerangka teori dan metode-metode yang mungkin untuk digunakan secara sistematis. Gunakan \textit{heading} untuk menguraikan metode yang ada.
+\vspace{6pt}
+
+\noindent
+Contoh (sederhana):
+
+\section{Metode Kendali untuk Pengaturan Kadar Oksigen Terlarut}
+"Untuk mengatur kadar oksigen terlarut dibutuhkan suatu metode kendali. Dari literatur - literatur ilmiah yang ada, solusi yang diajukan mengacu kepada metode kendali Proportional-Integral-Derivative (PID), Logika \textit{Fuzzy}, dan \textit{Model Predictive Control} (MPC).
+
+    \subsection{Metode Kendali PID}
+    \label{subsec:Metode_Kendali_PID}
+    Pengendali PID adalah metode yang paling banyak digunakan untuk kontrol kadar oksigen terlarut. Metode ini bekerja dengan cara menghitung kesalahan antara kadar oksigen aktual dan target, kemudian mengatur input kontrol berdasarkan kesalahan tersebut. Keunggulannya terletak pada kesederhanaan dan kemudahan implementasi dalam berbagai sistem, serta respons cepat yang dapat dicapai dalam pengaturan kadar oksigen. Dalam studi yang telah dilakukan oleh Smith dan Johnson, \cite{smith_pid_2017}, pengendali PID terbukti efektif dalam mengatur kadar oksigen dalam sistem akuakultur yang relatif stabil. Namun, kelemahan utama PID adalah keterbatasannya dalam menangani ketidakpastian dan perubahan sistem yang besar, yang dapat menyebabkan overshoot atau kestabilan yang buruk jika tidak disesuaikan dengan baik \cite{nguyen_pid_2019}.
+    
+    \subsection{Metode Kendali Logika \textit{Fuzzy}}
+    \label{subsec:Metode_Kendali_Logika_Fuzzy}
+
+    Pengendali logika \textit{fuzzy} atau \textit{fuzzy logic controller} (FLC) digunakan untuk menangani ketidakpastian dan variabilitas yang sering ditemui dalam lingkungan akuatik, yang dapat mempengaruhi konsumsi oksigen oleh organisme. FLC menggunakan aturan linguistik yang berbasis pada logika fuzzy untuk mengatur kadar oksigen, tanpa memerlukan model matematis yang tepat. Dalam penelitian yang dilakukan oleh Davis et al. pada tahun 2018 \cite{davis_flc_2019}, FLC terbukti efektif dalam mengontrol kadar oksigen meskipun dengan data yang tidak lengkap atau bervariasi. Keunggulan utama FLC adalah fleksibilitasnya dalam menghadapi ketidakpastian dan perubahan kondisi lingkungan, serta kemampuannya untuk beradaptasi dengan dinamika yang berubah-ubah. Namun, kelemahan utama dari FLC adalah kompleksitas dalam mendesain aturan fuzzy yang tepat dan kesulitan dalam mengoptimalkan parameter kontrol untuk sistem yang lebih besar atau lebih kompleks \cite{li_OptFLC_2020}."
+    
+    \subsection{Metode MPC}
+    \label{Metode_MPC}
+
+    MPC adalah metode kontrol yang lebih maju yang digunakan untuk pengendalian sistem multivariat yang kompleks. MPC bekerja dengan menggunakan model matematis untuk meramalkan kondisi masa depan dan mengoptimalkan keputusan kontrol berdasarkan prediksi tersebut. Dalam konteks pengendalian kadar oksigen terlarut, MPC memungkinkan pengaturan yang lebih tepat dengan mempertimbangkan batasan sistem dan gangguan eksternal. Rodrigues et al. pada tahun 2021 \cite{rodrigues_mpc_2021} menunjukkan bahwa MPC efektif dalam pengelolaan kadar oksigen di akuarium besar dan instalasi pengolahan air limbah, dimana banyak variabel harus dikendalikan secara bersamaan. Keunggulannya adalah kemampuannya untuk menangani sistem yang sangat dinamis dan untuk memaksimalkan kinerja dalam jangka panjang. Namun, kelemahan utama MPC adalah kebutuhan komputasi yang tinggi dan kesulitan dalam pembuatan model yang akurat, yang dapat membatasi penerapannya dalam sistem dengan sumber daya komputasi terbatas \cite{taylor_mpc_2020}.
+
+    \subsection{Perbandingan Metode Kendali untuk Pengaturan Kadar Oksigen Terlarut}
+    Untuk tujuan keterbacaan (\textit{readibility}), Anda dapat membuat subbab yang berisi tabel rangkuman mengenai perbandingan metode-metode yang telah Anda bahas di atas. Tabel tersebut utamanya berisi perbandingan konsep dasar yang digunakan, keunggulan, dan kelemahan masing-masing metode tersebut.
+
+\section{Metode A}
+\label{sec:Metode_01}
+
+    \lipsum[1-3]
+
+\section{Metode B}
+\label{sec:Metode_02}
+
+    \lipsum[4-6]
+    
+    \subsection{Sub-Metode B}
+    \label{subsec:Sub-Metode_02}
+    
+    \lipsum[7-9]
+
+\section{Metode C}
+\label{sec:Metode_03}
+
+    \lipsum[10-12]
+    
+    \subsection{Sub-Metode C1}
+    \label{subsec:Sub-Metode_03A}
+    
+    \lipsum[13-15]
+    
+    \subsection{Sub-Metode C2}
+    \label{subsec:Sub-Metode_03B}
+    
+    \lipsum[15-17]
+
+\section{Analisis dan Pemilihan Metode}
+\label{sec:Analisis dan Pemilihan Metode}
+
+Tim mahasiswa diwajibkan untuk membuat analisis tentang metode kunci yang dibahas sebelumnya secara detail dan memilih satu metode terbaik beserta alasan pemilihan metode tersebut. Untuk diketahui, komite capstone akan menanyakan secara eksplisit dalam ujian C-251 untuk memastikan ketepatan dan alasan pemilihan yang logis dari metode yang dipakai.

@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EEG ABR Monitor</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0d0d0d; color: #e0e0e0; font-family: 'Courier New', monospace; padding: 16px; }
+  h1 { font-size: 1.1rem; color: #00ff88; margin-bottom: 12px; letter-spacing: 2px; }
+
+  .status-bar {
+    display: flex; gap: 20px; flex-wrap: wrap;
+    background: #1a1a1a; border: 1px solid #333; border-radius: 6px;
+    padding: 10px 14px; margin-bottom: 14px; font-size: 0.8rem;
+  }
+  .stat { display: flex; flex-direction: column; gap: 2px; }
+  .stat-label { color: #666; font-size: 0.7rem; text-transform: uppercase; }
+  .stat-value { color: #00ff88; font-size: 1rem; font-weight: bold; }
+  .stat-value.warn { color: #ffaa00; }
+  .stat-value.bad  { color: #ff4444; }
+
+  .tab-bar {
+    display: flex; gap: 4px; margin-bottom: 14px;
+  }
+  .tab {
+    padding: 6px 18px; border-radius: 4px 4px 0 0;
+    border: 1px solid #333; border-bottom: none;
+    cursor: pointer; font-size: 0.82rem; color: #666;
+    background: #111;
+  }
+  .tab.active { color: #00ff88; border-color: #00ff88; background: #0d1f15; }
+
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  .controls {
+    display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; align-items: center;
+  }
+  button {
+    background: #1a1a1a; border: 1px solid #444; color: #ccc;
+    padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 0.8rem;
+    transition: border-color 0.2s, color 0.2s;
+  }
+  button:hover { border-color: #00ff88; color: #00ff88; }
+  button.active { border-color: #00ff88; color: #00ff88; background: #0d1f15; }
+  label { font-size: 0.8rem; color: #888; display: flex; align-items: center; gap: 6px; }
+  select { background: #1a1a1a; color: #ccc; border: 1px solid #444; border-radius: 4px; padding: 3px 6px; }
+
+  .chart-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 12px;
+  }
+  .chart-box {
+    background: #111; border: 1px solid #222; border-radius: 6px; padding: 10px;
+  }
+  .chart-box h3 { font-size: 0.75rem; color: #555; margin-bottom: 6px; }
+  .snr-pill {
+    display: inline-block; font-size: 0.65rem; padding: 1px 6px;
+    border-radius: 99px; margin-left: 8px; vertical-align: middle;
+  }
+  .snr-good { background: #0d2d1a; color: #00ff88; border: 1px solid #00ff88; }
+  .snr-ok   { background: #2d2200; color: #ffaa00; border: 1px solid #ffaa00; }
+  .snr-bad  { background: #2d0d0d; color: #ff4444; border: 1px solid #ff4444; }
+  canvas { max-height: 160px; }
+
+  /* Raw panel — satu chart besar per channel */
+  .raw-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .raw-grid .chart-box canvas { max-height: 120px; }
+
+  #log { font-size: 0.7rem; color: #444; margin-top: 14px; }
+</style>
+</head>
+<body>
+
+<h1>▸ EEG ABR MONITOR</h1>
+
+<div class="status-bar">
+  <div class="stat">
+    <span class="stat-label">ABR Stream</span>
+    <span class="stat-value" id="st-conn">Menghubungkan…</span>
+  </div>
+  <div class="stat">
+    <span class="stat-label">Raw Stream</span>
+    <span class="stat-value" id="st-raw-conn">Menghubungkan…</span>
+  </div>
+  <div class="stat">
+    <span class="stat-label">Trials</span>
+    <span class="stat-value" id="st-trials">0</span>
+  </div>
+  <div class="stat">
+    <span class="stat-label">Kualitas</span>
+    <span class="stat-value" id="st-quality">—</span>
+  </div>
+  <div class="stat">
+    <span class="stat-label">Epoch</span>
+    <span class="stat-value" id="st-epoch">—</span>
+  </div>
+  <div class="stat">
+    <span class="stat-label">Fs</span>
+    <span class="stat-value" id="st-fs">—</span>
+  </div>
+  <div class="stat">
+    <span class="stat-label">Raw samples</span>
+    <span class="stat-value" id="st-rawsamp">—</span>
+  </div>
+</div>
+
+<!-- Tab bar -->
+<div class="tab-bar">
+  <div class="tab active" id="tab-abr" onclick="switchTab('abr')">ABR Average</div>
+  <div class="tab" id="tab-raw" onclick="switchTab('raw')">Raw Waveform</div>
+</div>
+
+<!-- ABR panel -->
+<div class="panel active" id="panel-abr">
+  <div class="controls">
+    <button id="btn-stream" class="active" onclick="toggleABRStream()">⏸ Pause ABR</button>
+    <button onclick="fetchABROnce()">↺ Refresh</button>
+    <label>
+      <input type="checkbox" id="chk-all" onchange="toggleAllChannels(this.checked)" checked>
+      Semua channel
+    </label>
+    <label>
+      Channel:
+      <select id="sel-ch" onchange="setSingleChannel(this.value)">
+        <option value="">Semua</option>
+        <option value="0">Ch 1</option><option value="1">Ch 2</option>
+        <option value="2">Ch 3</option><option value="3">Ch 4</option>
+        <option value="4">Ch 5</option><option value="5">Ch 6</option>
+        <option value="6">Ch 7</option><option value="7">Ch 8</option>
+      </select>
+    </label>
+  </div>
+  <div class="chart-grid" id="abr-grid"></div>
+</div>
+
+<!-- Raw panel -->
+<div class="panel" id="panel-raw">
+  <div class="controls">
+    <button id="btn-raw-stream" class="active" onclick="toggleRawStream()">⏸ Pause Raw</button>
+    <label>
+      Window:
+      <select id="sel-window" onchange="rawWindowMs=parseInt(this.value)">
+        <option value="500">500 ms</option>
+        <option value="1000" selected>1 detik</option>
+        <option value="2000">2 detik</option>
+      </select>
+    </label>
+    <label>
+      Channel:
+      <select id="sel-raw-ch" onchange="setRawChannel(this.value)">
+        <option value="">Semua</option>
+        <option value="0">Ch 1</option><option value="1">Ch 2</option>
+        <option value="2">Ch 3</option><option value="3">Ch 4</option>
+        <option value="4">Ch 5</option><option value="5">Ch 6</option>
+        <option value="6">Ch 7</option><option value="7">Ch 8</option>
+      </select>
+    </label>
+  </div>
+  <div class="raw-grid" id="raw-grid"></div>
+</div>
+
+<div id="log">Menunggu data…</div>
+
+<script>
+const BASE = `${location.protocol}//${location.hostname}:8080`;
+const N_CH = 8;
+const COLORS = [
+  '#00ff88','#00aaff','#ffaa00','#ff4488',
+  '#aa88ff','#00ffee','#ffdd00','#ff8844'
+];
+
+// ─── State ───────────────────────────────────────────────────
+let abrCharts = [];
+let rawCharts = [];
+let abrSSE = null, rawSSE = null;
+let abrStreaming = true, rawStreaming = true;
+let singleCh = null;
+let rawSingleCh = null;
+let rawWindowMs = 1000;
+
+// ─── Tab switching ────────────────────────────────────────────
+function switchTab(name) {
+  ['abr','raw'].forEach(t => {
+    document.getElementById(`tab-${t}`).classList.toggle('active', t === name);
+    document.getElementById(`panel-${t}`).classList.toggle('active', t === name);
+  });
+}
+
+// ─── ABR charts ──────────────────────────────────────────────
+function buildABRCharts(nSamples, epochMs) {
+  const grid = document.getElementById('abr-grid');
+  grid.innerHTML = '';
+  abrCharts = [];
+  const chList = singleCh !== null ? [singleCh] : Array.from({length: N_CH}, (_,i) => i);
+
+  chList.forEach(ch => {
+    const labels = Array.from({length: nSamples}, (_,i) =>
+      ((i / nSamples) * epochMs).toFixed(1));
+
+    const box = document.createElement('div');
+    box.className = 'chart-box';
+    box.innerHTML = `<h3 id="abr-label-${ch}">Channel ${ch+1}</h3><canvas id="abr-canvas-${ch}"></canvas>`;
+    grid.appendChild(box);
+
+    const ctx = document.getElementById(`abr-canvas-${ch}`).getContext('2d');
+    const chart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          data: new Array(nSamples).fill(0),
+          borderColor: COLORS[ch % COLORS.length],
+          borderWidth: 1.5, pointRadius: 0, tension: 0.2,
+        }]
+      },
+      options: {
+        animation: false, responsive: true, maintainAspectRatio: true,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color:'#555', maxTicksLimit:6, font:{size:10} }, grid:{color:'#1e1e1e'},
+               title:{display:true, text:'ms', color:'#444', font:{size:10}} },
+          y: { ticks: { color:'#555', font:{size:10} }, grid:{color:'#1e1e1e'},
+               title:{display:true, text:'µV', color:'#444', font:{size:10}} }
+        }
+      }
+    });
+    abrCharts.push({ chart, ch });
+  });
+}
+
+function updateABRCharts(result) {
+  const abr = result.abr_average;
+  const nSamples = abr && abr[0] ? abr[0].length : 0;
+  if (!nSamples) return;
+
+  if (abrCharts.length === 0 || abrCharts[0].chart.data.labels.length !== nSamples) {
+    buildABRCharts(nSamples, result.epoch_ms);
+  }
+
+  abrCharts.forEach(({ chart, ch }) => {
+    chart.data.datasets[0].data = abr[ch] || [];
+    chart.update('none');
+
+    const snr = result.snr ? result.snr[ch] : null;
+    const label = document.getElementById(`abr-label-${ch}`);
+    if (label && snr !== null) {
+      const cls = snr > 10 ? 'snr-good' : snr > 5 ? 'snr-ok' : 'snr-bad';
+      label.innerHTML = `Channel ${ch+1} <span class="snr-pill ${cls}">SNR ${snr} dB</span>`;
+    }
+  });
+
+  document.getElementById('st-trials').textContent = result.trial_count ?? '—';
+  const qEl = document.getElementById('st-quality');
+  qEl.textContent = result.quality ?? '—';
+  qEl.className = 'stat-value' + (result.quality === 'Konvergen' ? '' : result.quality === 'Mulai terbentuk' ? ' warn' : ' bad');
+  document.getElementById('st-epoch').textContent = result.epoch_ms != null ? `${result.epoch_ms} ms` : '—';
+  document.getElementById('st-fs').textContent = result.sampling_rate != null ? `${result.sampling_rate} Hz` : '—';
+  document.getElementById('log').textContent = `ABR update: ${new Date().toLocaleTimeString()} | trials=${result.trial_count}`;
+}
+
+// ─── Raw charts ──────────────────────────────────────────────
+function buildRawCharts(nSamples, windowMs) {
+  const grid = document.getElementById('raw-grid');
+  grid.innerHTML = '';
+  rawCharts = [];
+  const chList = rawSingleCh !== null ? [rawSingleCh] : Array.from({length: N_CH}, (_,i) => i);
+
+  chList.forEach(ch => {
+    const labels = Array.from({length: nSamples}, (_,i) =>
+      ((i / nSamples) * windowMs).toFixed(0));
+
+    const box = document.createElement('div');
+    box.className = 'chart-box';
+    box.innerHTML = `<h3>Raw Ch ${ch+1} <span style="color:#444;font-size:0.65rem">(${windowMs} ms window)</span></h3><canvas id="raw-canvas-${ch}"></canvas>`;
+    grid.appendChild(box);
+
+    const ctx = document.getElementById(`raw-canvas-${ch}`).getContext('2d');
+    const chart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          data: new Array(nSamples).fill(0),
+          borderColor: COLORS[ch % COLORS.length],
+          borderWidth: 1, pointRadius: 0, tension: 0,
+        }]
+      },
+      options: {
+        animation: false, responsive: true, maintainAspectRatio: true,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color:'#555', maxTicksLimit:8, font:{size:9} }, grid:{color:'#1a1a1a'},
+               title:{display:true, text:'ms', color:'#444', font:{size:9}} },
+          y: { ticks: { color:'#555', font:{size:9} }, grid:{color:'#1a1a1a'},
+               title:{display:true, text:'µV', color:'#444', font:{size:9}} }
+        }
+      }
+    });
+    rawCharts.push({ chart, ch });
+  });
+}
+
+function updateRawCharts(result) {
+  const samples = result.samples;
+  if (!samples || !samples[0]) return;
+
+  const chList = rawSingleCh !== null ? [rawSingleCh] : Array.from({length: N_CH}, (_,i) => i);
+  const nSamples = samples[chList[0]] ? samples[chList[0]].length : 0;
+
+  if (rawCharts.length === 0 ||
+      rawCharts.length !== chList.length ||
+      (nSamples > 0 && rawCharts[0].chart.data.labels.length !== nSamples)) {
+    buildRawCharts(nSamples || 50, result.window_ms);
+  }
+
+  rawCharts.forEach(({ chart, ch }) => {
+    const data = samples[ch] || [];
+    // Update labels jika panjang berubah
+    if (data.length > 0 && chart.data.labels.length !== data.length) {
+      chart.data.labels = Array.from({length: data.length}, (_,i) =>
+        ((i / data.length) * result.window_ms).toFixed(0));
+    }
+    chart.data.datasets[0].data = data;
+    chart.update('none');
+  });
+
+  document.getElementById('st-rawsamp').textContent = nSamples;
+  document.getElementById('log').textContent = `Raw update: ${new Date().toLocaleTimeString()} | ${nSamples} samples / ${result.window_ms} ms`;
+}
+
+// ─── SSE management ──────────────────────────────────────────
+function startABRStream() {
+  if (abrSSE) abrSSE.close();
+  abrSSE = new EventSource(`${BASE}/api/v1/abr/stream`);
+  document.getElementById('st-conn').textContent = 'SSE aktif';
+  document.getElementById('st-conn').className = 'stat-value';
+  abrSSE.onmessage = e => { if (abrStreaming) { try { updateABRCharts(JSON.parse(e.data)); } catch {} } };
+  abrSSE.onerror = () => {
+    document.getElementById('st-conn').textContent = 'Error—retry…';
+    document.getElementById('st-conn').className = 'stat-value bad';
+  };
+}
+
+function startRawStream() {
+  if (rawSSE) rawSSE.close();
+  rawSSE = new EventSource(`${BASE}/api/v1/raw/stream`);
+  document.getElementById('st-raw-conn').textContent = 'SSE aktif';
+  document.getElementById('st-raw-conn').className = 'stat-value';
+  rawSSE.onmessage = e => { if (rawStreaming) { try { updateRawCharts(JSON.parse(e.data)); } catch {} } };
+  rawSSE.onerror = () => {
+    document.getElementById('st-raw-conn').textContent = 'Error—retry…';
+    document.getElementById('st-raw-conn').className = 'stat-value bad';
+  };
+}
+
+function toggleABRStream() {
+  abrStreaming = !abrStreaming;
+  const btn = document.getElementById('btn-stream');
+  if (abrStreaming) { startABRStream(); btn.textContent = '⏸ Pause ABR'; btn.classList.add('active'); }
+  else { if (abrSSE) { abrSSE.close(); abrSSE = null; } btn.textContent = '▶ Resume ABR'; btn.classList.remove('active'); document.getElementById('st-conn').textContent = 'Paused'; }
+}
+
+function toggleRawStream() {
+  rawStreaming = !rawStreaming;
+  const btn = document.getElementById('btn-raw-stream');
+  if (rawStreaming) { startRawStream(); btn.textContent = '⏸ Pause Raw'; btn.classList.add('active'); }
+  else { if (rawSSE) { rawSSE.close(); rawSSE = null; } btn.textContent = '▶ Resume Raw'; btn.classList.remove('active'); document.getElementById('st-raw-conn').textContent = 'Paused'; }
+}
+
+function fetchABROnce() {
+  fetch(`${BASE}/api/v1/abr`).then(r => r.json()).then(updateABRCharts).catch(console.error);
+}
+
+// ─── Filter helpers ───────────────────────────────────────────
+function toggleAllChannels(checked) {
+  singleCh = null;
+  document.getElementById('sel-ch').value = '';
+  abrCharts = [];
+  fetchABROnce();
+}
+
+function setSingleChannel(val) {
+  singleCh = val === '' ? null : parseInt(val);
+  document.getElementById('chk-all').checked = val === '';
+  abrCharts = [];
+  fetchABROnce();
+}
+
+function setRawChannel(val) {
+  rawSingleCh = val === '' ? null : parseInt(val);
+  rawCharts = [];
+}
+
+// ─── Boot ─────────────────────────────────────────────────────
+startABRStream();
+startRawStream();
+fetchABROnce();
+</script>
+</body>
+</html>

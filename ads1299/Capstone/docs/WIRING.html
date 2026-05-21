@@ -1,0 +1,618 @@
+<h1 id="wiring-final-esp32-wroom-32u-ads1299-pcm5102a">
+  Wiring Final — ESP32-WROOM-32U + ADS1299 + PCM5102A
+</h1>
+<p>
+  Dokumen ini adalah referensi wiring tunggal yang sinkron dengan kode firmware
+  di <code>Capstone/</code>. Setiap koneksi di sini langsung cocok dengan define
+  di <code>include/eeg_config.h</code>.
+</p>
+<hr />
+<h2 id="1-ringkasan-pin-esp32-ads1299">1. Ringkasan Pin ESP32 → ADS1299</h2>
+<table>
+  <thead>
+    <tr>
+      <th>ESP32 GPIO</th>
+      <th>ADS1299 Pin</th>
+      <th>Nama Sinyal</th>
+      <th>Arah</th>
+      <th>Keterangan</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>GPIO 18</td>
+      <td>SCLK</td>
+      <td>SPI Clock</td>
+      <td>OUT</td>
+      <td>Defined: <code>EEG_PIN_SPI_SCLK</code></td>
+    </tr>
+    <tr>
+      <td>GPIO 19</td>
+      <td>DOUT</td>
+      <td>SPI MISO</td>
+      <td>IN</td>
+      <td>
+        Defined: <code>EEG_PIN_SPI_MISO</code> — pasang 10kΩ pull-down ke GND
+      </td>
+    </tr>
+    <tr>
+      <td>GPIO 23</td>
+      <td>DIN</td>
+      <td>SPI MOSI</td>
+      <td>OUT</td>
+      <td>Defined: <code>EEG_PIN_SPI_MOSI</code></td>
+    </tr>
+    <tr>
+      <td>GPIO 5</td>
+      <td>CS</td>
+      <td>Chip Select</td>
+      <td>OUT</td>
+      <td>
+        Defined: <code>EEG_PIN_ADS1299_CS</code> — active-low, pasang 10kΩ
+        pull-up ke 3V3
+      </td>
+    </tr>
+    <tr>
+      <td>GPIO 34</td>
+      <td>DRDY</td>
+      <td>Data Ready</td>
+      <td>IN</td>
+      <td>
+        Defined: <code>EEG_PIN_ADS1299_DRDY</code> — input-only GPIO, active-low
+        IRQ
+      </td>
+    </tr>
+    <tr>
+      <td>GPIO 32</td>
+      <td>RESET</td>
+      <td>Reset</td>
+      <td>OUT</td>
+      <td>
+        Defined: <code>EEG_PIN_ADS1299_RESET</code> — active-low, pasang 10kΩ
+        pull-up ke 3V3
+      </td>
+    </tr>
+    <tr>
+      <td>GPIO 33</td>
+      <td>PWDN</td>
+      <td>Power Down</td>
+      <td>OUT</td>
+      <td>
+        Defined: <code>EEG_PIN_ADS1299_PWDN</code> — active-low, pasang 10kΩ
+        pull-up ke 3V3
+      </td>
+    </tr>
+    <tr>
+      <td>GPIO 21</td>
+      <td>START</td>
+      <td>Start/Stop</td>
+      <td>OUT</td>
+      <td>
+        Defined: <code>EEG_PIN_ADS1299_START</code> — active-high, pasang 10kΩ
+        pull-down ke GND
+      </td>
+    </tr>
+  </tbody>
+</table>
+<hr />
+<h2 id="2-ringkasan-pin-esp32-pcm5102a">2. Ringkasan Pin ESP32 → PCM5102A</h2>
+<table>
+  <thead>
+    <tr>
+      <th>ESP32 GPIO</th>
+      <th>PCM5102A Pin</th>
+      <th>Nama Sinyal</th>
+      <th>Arah</th>
+      <th>Keterangan</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>GPIO 26</td>
+      <td>BCK</td>
+      <td>Bit Clock</td>
+      <td>OUT</td>
+      <td>Defined: <code>EEG_PIN_I2S_BCLK</code></td>
+    </tr>
+    <tr>
+      <td>GPIO 25</td>
+      <td>LCK</td>
+      <td>Word Select (LRCK)</td>
+      <td>OUT</td>
+      <td>Defined: <code>EEG_PIN_I2S_LRC</code></td>
+    </tr>
+    <tr>
+      <td>GPIO 22</td>
+      <td>DIN</td>
+      <td>Data In</td>
+      <td>OUT</td>
+      <td>Defined: <code>EEG_PIN_I2S_DOUT</code></td>
+    </tr>
+    <tr>
+      <td>3V3</td>
+      <td>VIN</td>
+      <td>Supply</td>
+      <td>PWR</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td>GND</td>
+      <td>GND</td>
+      <td>Ground</td>
+      <td>GND</td>
+    </tr>
+  </tbody>
+</table>
+<h3 id="pin-pcm5102a-yang-di-strap-ke-gnd-vcc-tidak-ke-esp32-">
+  Pin PCM5102A yang di-strap ke GND/VCC (tidak ke ESP32):
+</h3>
+<table>
+  <thead>
+    <tr>
+      <th>PCM5102A Pin</th>
+      <th>Sambung ke</th>
+      <th>Fungsi</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>SCK</td>
+      <td>GND</td>
+      <td>Internal PLL aktif (tidak butuh MCLK dari ESP32)</td>
+    </tr>
+    <tr>
+      <td>FMT</td>
+      <td>GND</td>
+      <td>Format I2S standar</td>
+    </tr>
+    <tr>
+      <td>FLT</td>
+      <td>GND</td>
+      <td>Normal latency filter</td>
+    </tr>
+    <tr>
+      <td>DEMP</td>
+      <td>GND</td>
+      <td>De-emphasis off</td>
+    </tr>
+    <tr>
+      <td>XMT</td>
+      <td>3V3 (via 10kΩ)</td>
+      <td>Un-mute (aktif)</td>
+    </tr>
+  </tbody>
+</table>
+<hr />
+<h2 id="3-power-supply-dari-lipo-ke-ads1299">
+  3. Power Supply — Dari LiPo ke ADS1299
+</h2>
+<pre><code><span class="hljs-type">LiPo</span> <span class="hljs-number">3.7</span>V
+    │
+    ├──► <span class="hljs-type">TP4056</span> <span class="hljs-keyword">module</span> (<span class="hljs-type">USB</span>-<span class="hljs-type">C</span> charging) ──┐
+    │                                     │ (charge only, no data ke <span class="hljs-type">ESP32</span>)
+    │
+    ├──► SPDT Power Switch
+          │
+          ▼
+     TPS61023 (<span class="hljs-type">Boost</span>)
+     3.7V → 5V
+          │
+          ├──► 10µF (bulk)
+          │
+          ├──[BLM18PG121 Ferrite 120Ω]──► 5V_AVDD ──► ADS1299 AVDD (pin 1,12,28,64)
+          │                                           (decoupling per pin: 10µ<span class="hljs-type">F</span>+1µ<span class="hljs-type">F</span>+100nF+10nF)
+          │
+          └──► AMS1117-3.3 (<span class="hljs-type">LDO</span>)
+               │
+               └──► 3.3V ──► ESP32 VIN
+                         └──► ADS1299 DVDD
+                         └──► PCM5102A VIN
+</code></pre>
+<h3 id="tegangan-per-rail-">Tegangan Per Rail:</h3>
+<table>
+  <thead>
+    <tr>
+      <th>Rail</th>
+      <th>Tegangan</th>
+      <th>Sumber</th>
+      <th>Untuk</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>VBAT</td>
+      <td>3.0–4.2V</td>
+      <td>LiPo</td>
+      <td>Input boost saja</td>
+    </tr>
+    <tr>
+      <td>5V_AVDD</td>
+      <td>5.0V (filtered)</td>
+      <td>TPS61023 + ferrite</td>
+      <td>ADS1299 AVDD</td>
+    </tr>
+    <tr>
+      <td>3V3</td>
+      <td>3.3V</td>
+      <td>AMS1117-3.3</td>
+      <td>ESP32, ADS1299 DVDD, PCM5102A</td>
+    </tr>
+  </tbody>
+</table>
+<hr />
+<h2 id="4-ads1299-koneksi-supply-strap">
+  4. ADS1299 — Koneksi Supply &amp; Strap
+</h2>
+<table>
+  <thead>
+    <tr>
+      <th>ADS1299 Pin</th>
+      <th>Sambung ke</th>
+      <th>Nilai</th>
+      <th>Keterangan</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>AVDD (×4 pin: 1,12,28,64)</td>
+      <td>5V_AVDD</td>
+      <td>—</td>
+      <td>Masing-masing: 10µF ‖ 1µF ‖ 100nF ‖ 10nF ke AVSS</td>
+    </tr>
+    <tr>
+      <td>AVSS (semua)</td>
+      <td>GND (star point)</td>
+      <td>—</td>
+      <td>Star ground tepat di bawah chip</td>
+    </tr>
+    <tr>
+      <td>DVDD</td>
+      <td>3V3</td>
+      <td>—</td>
+      <td>100nF ‖ 10nF ke DGND</td>
+    </tr>
+    <tr>
+      <td>DGND</td>
+      <td>GND</td>
+      <td>—</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td>VCAP1</td>
+      <td>AVSS via cap</td>
+      <td>1µF</td>
+      <td><strong>Wajib — internal LDO ADS1299</strong></td>
+    </tr>
+    <tr>
+      <td>VREFP</td>
+      <td>AVSS via cap</td>
+      <td>10µF ‖ 100nF</td>
+      <td>Internal 4.5V reference (aktif via CONFIG3)</td>
+    </tr>
+    <tr>
+      <td>VREFN</td>
+      <td>AVSS</td>
+      <td>short</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td>CLKSEL</td>
+      <td>GND</td>
+      <td>10kΩ</td>
+      <td>Internal oscillator 2.048 MHz aktif</td>
+    </tr>
+    <tr>
+      <td>CLK</td>
+      <td>NC</td>
+      <td>—</td>
+      <td>Biarkan floating (test point opsional)</td>
+    </tr>
+  </tbody>
+</table>
+<hr />
+<h2 id="5-ads1299-input-elektroda-per-channel-8-">
+  5. ADS1299 — Input Elektroda Per Channel (×8)
+</h2>
+<p>Contoh untuk Channel 1 (ulangi untuk CH2–CH8):</p>
+<pre><code><span class="hljs-selector-tag">Elektroda</span> (+)
+     │
+     ├── <span class="hljs-selector-tag">10k</span>Ω ──┬──────────────────► <span class="hljs-selector-tag">IN1P</span> (ADS1299)
+                │
+                ├── <span class="hljs-selector-tag">BAV99</span> ──► <span class="hljs-selector-tag">AVDD</span> (<span class="hljs-number">5</span>V)   (clamp atas)
+                ├── <span class="hljs-selector-tag">BAV99</span> ──► <span class="hljs-selector-tag">AVSS</span> (GND)  (clamp bawah)
+                │
+                └── <span class="hljs-selector-tag">100nF</span> <span class="hljs-selector-tag">C0G</span> ──► <span class="hljs-selector-tag">AVSS</span>   (LPF fc ≈ <span class="hljs-number">159Hz</span>)
+
+<span class="hljs-selector-tag">Elektroda</span> (-)
+     │
+     └── <span class="hljs-selector-tag">10k</span>Ω ──┬──────────────────► <span class="hljs-selector-tag">IN1N</span> (ADS1299)
+                │ (proteksi <span class="hljs-attribute">identik</span>: BAV99 + <span class="hljs-number">100</span>nF C0G)
+</code></pre>
+<h3 id="koneksi-elektroda-semua-8-channel-">
+  Koneksi Elektroda (semua 8 channel):
+</h3>
+<table>
+  <thead>
+    <tr>
+      <th>Konektor</th>
+      <th>Resistor</th>
+      <th>ESD</th>
+      <th>Cap</th>
+      <th>ADS1299 Pin</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>IN1+</td>
+      <td>R1 10kΩ</td>
+      <td>D1 BAV99</td>
+      <td>C1 100nF</td>
+      <td>IN1P</td>
+    </tr>
+    <tr>
+      <td>IN1-</td>
+      <td>R2 10kΩ</td>
+      <td>D2 BAV99</td>
+      <td>C2 100nF</td>
+      <td>IN1N</td>
+    </tr>
+    <tr>
+      <td>IN2+</td>
+      <td>R3 10kΩ</td>
+      <td>D3 BAV99</td>
+      <td>C3 100nF</td>
+      <td>IN2P</td>
+    </tr>
+    <tr>
+      <td>IN2-</td>
+      <td>R4 10kΩ</td>
+      <td>D4 BAV99</td>
+      <td>C4 100nF</td>
+      <td>IN2N</td>
+    </tr>
+    <tr>
+      <td>IN3+</td>
+      <td>R5 10kΩ</td>
+      <td>D5 BAV99</td>
+      <td>C5 100nF</td>
+      <td>IN3P</td>
+    </tr>
+    <tr>
+      <td>IN3-</td>
+      <td>R6 10kΩ</td>
+      <td>D6 BAV99</td>
+      <td>C6 100nF</td>
+      <td>IN3N</td>
+    </tr>
+    <tr>
+      <td>IN4+</td>
+      <td>R7 10kΩ</td>
+      <td>D7 BAV99</td>
+      <td>C7 100nF</td>
+      <td>IN4P</td>
+    </tr>
+    <tr>
+      <td>IN4-</td>
+      <td>R8 10kΩ</td>
+      <td>D8 BAV99</td>
+      <td>C8 100nF</td>
+      <td>IN4N</td>
+    </tr>
+    <tr>
+      <td>IN5+</td>
+      <td>R9 10kΩ</td>
+      <td>D9 BAV99</td>
+      <td>C9 100nF</td>
+      <td>IN5P</td>
+    </tr>
+    <tr>
+      <td>IN5-</td>
+      <td>R10 10kΩ</td>
+      <td>D10 BAV99</td>
+      <td>C10 100nF</td>
+      <td>IN5N</td>
+    </tr>
+    <tr>
+      <td>IN6+</td>
+      <td>R11 10kΩ</td>
+      <td>D11 BAV99</td>
+      <td>C11 100nF</td>
+      <td>IN6P</td>
+    </tr>
+    <tr>
+      <td>IN6-</td>
+      <td>R12 10kΩ</td>
+      <td>D12 BAV99</td>
+      <td>C12 100nF</td>
+      <td>IN6N</td>
+    </tr>
+    <tr>
+      <td>IN7+</td>
+      <td>R13 10kΩ</td>
+      <td>D13 BAV99</td>
+      <td>C13 100nF</td>
+      <td>IN7P</td>
+    </tr>
+    <tr>
+      <td>IN7-</td>
+      <td>R14 10kΩ</td>
+      <td>D14 BAV99</td>
+      <td>C14 100nF</td>
+      <td>IN7N</td>
+    </tr>
+    <tr>
+      <td>IN8+</td>
+      <td>R15 10kΩ</td>
+      <td>D15 BAV99</td>
+      <td>C15 100nF</td>
+      <td>IN8P</td>
+    </tr>
+    <tr>
+      <td>IN8-</td>
+      <td>R16 10kΩ</td>
+      <td>D16 BAV99</td>
+      <td>C16 100nF</td>
+      <td>IN8N</td>
+    </tr>
+  </tbody>
+</table>
+<hr />
+<h2 id="6-drl-driven-right-leg-sirkuit-referensi-pasien">
+  6. DRL (Driven Right Leg) — Sirkuit Referensi Pasien
+</h2>
+<pre><code><span class="hljs-selector-tag">ADS1299</span> <span class="hljs-selector-tag">BIAS_OUT</span>
+      │
+      └──<span class="hljs-selector-attr">[R18: 10kΩ]</span>──┬──<span class="hljs-selector-attr">[C42: 1nF]</span>──┐  (kompensasi stabilitas)
+                      └──────────────┘
+                      │
+                      └──<span class="hljs-selector-attr">[R17: 330kΩ]</span>──► <span class="hljs-selector-tag">Elektroda</span> <span class="hljs-selector-tag">BIAS</span> (kaki kanan / mastoid)
+</code></pre>
+<p>Config di firmware (<code>CONFIG3 = 0xE0</code>):</p>
+<ul>
+  <li><code>PD_BIAS = 1</code> → BIAS buffer aktif</li>
+  <li><code>BIASREF_INT = 1</code> → referensi (AVDD+AVSS)/2 internal</li>
+  <li>
+    <code>BIAS_SENSP = 0xFF</code>, <code>BIAS_SENSN = 0xFF</code> → semua 8
+    channel kontribusi ke DRL
+  </li>
+</ul>
+<hr />
+<h2 id="7-pull-up-pull-down-resistor-summary">
+  7. Pull-up / Pull-down Resistor Summary
+</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Pin</th>
+      <th>Nilai</th>
+      <th>Ke</th>
+      <th>Fungsi</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>MISO (GPIO 19)</td>
+      <td>10kΩ</td>
+      <td>GND</td>
+      <td>Cegah noise saat CS=HIGH (tri-state)</td>
+    </tr>
+    <tr>
+      <td>CS (GPIO 5)</td>
+      <td>10kΩ</td>
+      <td>3V3</td>
+      <td>Idle HIGH (chip tidak dipilih)</td>
+    </tr>
+    <tr>
+      <td>RESET (GPIO 32)</td>
+      <td>10kΩ</td>
+      <td>3V3</td>
+      <td>Cegah reset tidak sengaja</td>
+    </tr>
+    <tr>
+      <td>PWDN (GPIO 33)</td>
+      <td>10kΩ</td>
+      <td>3V3</td>
+      <td>Default = powered (tidak power-down)</td>
+    </tr>
+    <tr>
+      <td>START (GPIO 21)</td>
+      <td>10kΩ</td>
+      <td>GND</td>
+      <td>Default = stop conversion</td>
+    </tr>
+    <tr>
+      <td>CLKSEL</td>
+      <td>10kΩ</td>
+      <td>GND</td>
+      <td>Pilih internal oscillator</td>
+    </tr>
+  </tbody>
+</table>
+<hr />
+<h2 id="8-spi-configuration-dari-firmware-">
+  8. SPI Configuration (dari firmware)
+</h2>
+<pre><code>SPIClass SPI(HSPI)
+SPI.begin(<span class="hljs-attr">SCLK=18,</span> <span class="hljs-attr">MISO=19,</span> <span class="hljs-attr">MOSI=23,</span> <span class="hljs-attr">CS=5)</span>
+
+SPISettings:
+  Clock    : <span class="hljs-number">1</span>,<span class="hljs-number">000</span>,<span class="hljs-number">000</span> Hz (<span class="hljs-number">1</span> MHz)
+  Bit order: MSBFIRST
+  Mode     : SPI_MODE1 (<span class="hljs-attr">CPOL=0,</span> <span class="hljs-attr">CPHA=1)</span>
+</code></pre>
+<hr />
+<h2 id="9-diagram-blok-sistem-lengkap">9. Diagram Blok Sistem Lengkap</h2>
+<pre><code>                    ┌──────────────────────────────────────────────┐
+  LiPo <span class="hljs-number">3</span>.<span class="hljs-number">7</span>V ──────►│ TPS61023 <span class="hljs-keyword">Boost </span>│ AMS1117-<span class="hljs-number">3</span>.<span class="hljs-number">3</span> │ TP4056 Charge │
+                    └──────┬─────────────────┬──────────────────────┘
+                    <span class="hljs-number">5</span>V_AVDD│          <span class="hljs-number">3</span><span class="hljs-built_in">V3</span>────┤
+                           │                 │
+                    ┌──────┴──────┐   ┌──────┴────────────────────────┐
+                    │  ADS1299    │   │     ESP32-WROOM-<span class="hljs-number">32</span>U           │
+                    │  TQFP-<span class="hljs-number">64</span>   │   │                               │
+                    │            │   │  GPIO18 ──► SCLK              │
+                    │ SCLK ◄─────┼───┤  GPIO19 ◄── DOUT (MISO)      │
+                    │ DIN  ◄─────┼───┤  GPIO23 ──► DIN  (MOSI)      │
+                    │ DOUT ─────►┼───┤  GPIO5  ──► CS               │
+                    │ CS   ◄─────┼───┤  GPIO34 ◄── DRDY (IRQ)       │
+                    │ DRDY ─────►┼───┤  GPIO32 ──► RESET            │
+                    │ RESET◄─────┼───┤  GPIO33 ──► PWDN             │
+                    │ PWDN ◄─────┼───┤  GPIO21 ──► START            │
+                    │ START◄─────┼───┤                               │
+                    │            │   │  GPIO26 ──► I2S <span class="hljs-keyword">BCLK─────────┼──┐
+</span>                    │ IN1P..IN8P │   │  GPIO25 ──► I2S LRC ─────────┼──┤
+                    │ IN1N..IN8N │   │  GPIO22 ──► I2S DIN ─────────┼──┤
+                    │ <span class="hljs-keyword">BIAS_OUT──►│DRL│ </span> GPIO2  ──► LED               │  │
+                    │ CLKSEL<span class="hljs-symbol">=GND</span> │   │  GPIO0  ──► <span class="hljs-keyword">BOOT </span><span class="hljs-keyword">BTN </span>         │  │
+                    └────────────┘   └───────────────────────────────┘  │
+                         │                                               │
+                    Elektroda                                    ┌───────┴─────┐
+                    (<span class="hljs-number">10</span>kΩ + <span class="hljs-keyword">BAV99 </span>                              │  PCM5102A   │
+                    + <span class="hljs-number">100</span>nF per pin)                             │  <span class="hljs-keyword">BCK/LCK/DIN│
+</span>                                                                │  → L/R OUT  │
+                                                                └─────────────┘
+</code></pre>
+<hr />
+<h2 id="10-gpio-yang-dilarang-esp32-flash-">
+  10. GPIO yang DILARANG (ESP32 Flash)
+</h2>
+<table>
+  <thead>
+    <tr>
+      <th>GPIO</th>
+      <th>Alasan</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>6, 7, 8, 9, 10, 11</td>
+      <td>Terhubung ke flash SPI internal — jangan pernah dipakai</td>
+    </tr>
+    <tr>
+      <td>1 (TX), 3 (RX)</td>
+      <td>UART debug — jangan pakai untuk peripheral lain</td>
+    </tr>
+  </tbody>
+</table>
+<hr />
+<h2 id="11-checklist-koneksi-sebelum-power-on">
+  11. Checklist Koneksi Sebelum Power On
+</h2>
+<ul>
+  <li>[ ] AVDD (pin 1,12,28,64) semua terhubung ke 5V_AVDD</li>
+  <li>[ ] VCAP1 ada 1µF ke AVSS</li>
+  <li>[ ] CLKSEL terhubung ke GND via 10kΩ</li>
+  <li>[ ] MISO (GPIO 19) ada 10kΩ pull-down ke GND</li>
+  <li>[ ] CS (GPIO 5) ada 10kΩ pull-up ke 3V3</li>
+  <li>[ ] RESET (GPIO 32) ada 10kΩ pull-up ke 3V3</li>
+  <li>[ ] PWDN (GPIO 33) ada 10kΩ pull-up ke 3V3</li>
+  <li>[ ] START (GPIO 21) ada 10kΩ pull-down ke GND</li>
+  <li>[ ] BAV99 orientasi benar (katoda ke AVDD, anoda ke AVSS)</li>
+  <li>[ ] PCM5102A: SCK → GND, FMT → GND, XMT → 3V3</li>
+  <li>[ ] GPIO 6–11 tidak ada yang tersambung ke apapun</li>
+</ul>
+<hr />
+<p>
+  _Sinkron dengan: <code>include/eeg_config.h</code> | Firmware version: Codex
+  drop 2026-05-19_
+</p>

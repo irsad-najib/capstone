@@ -1,0 +1,92 @@
+\section{Perancangan Umum Sistem}
+\label{sec:perancangan_umum}
+
+Pada bagian ini, mahasiswa diharapkan mampu merancang solusi teknis secara komprehensif berdasarkan permasalahan yang telah dirumuskan pada Bab sebelumnya. Perancangan ini merupakan inti dari dokumen C-251, sehingga kualitas analisis, kejelasan arsitektur sistem, serta keterhubungan antar komponen akan sangat menentukan kualitas keseluruhan dokumen.
+
+Rancangan solusi dapat disajikan dalam berbagai bentuk representasi, antara lain diagram blok, skematik sistem, diagram alir (\textit{flowchart}), \textit{pseudo-code}, maupun model matematis. Representasi tersebut harus mampu menggambarkan alur kerja sistem secara menyeluruh, mulai dari masukan (\textit{input}), proses (\textit{processing}), hingga keluaran (\textit{output}).
+
+\subsection{Arsitektur Umum Sistem}
+\label{subsec:arsitektur_umum}
+
+Secara umum, sistem yang dirancang terdiri dari beberapa subsistem utama yang saling terintegrasi, yaitu:
+\begin{itemize}
+    \item Subsistem akuisisi data (\textit{input})
+    \item Subsistem pemrosesan atau pengambilan keputusan
+    \item Subsistem aktuasi atau keluaran (\textit{output})
+\end{itemize}
+
+Hubungan antar subsistem tersebut direpresentasikan dalam bentuk diagram blok fungsional seperti pada Gambar~\ref{fig:block_umum}.
+
+\begin{figure}[!ht]
+    \centering
+    \includegraphics[width=0.6\textwidth]{fig/block_diagram_umum.png}
+    \caption{Diagram Blok Umum Sistem}
+    \label{fig:block_umum}
+\end{figure}
+
+Diagram tersebut menggambarkan alur data dan sinyal dalam sistem secara makroskopik tanpa masuk ke detail implementasi komponen.
+
+\subsection{Ilustrasi Miniatur Sistem (Prototype Concept)}
+\label{subsec:miniatur}
+
+Sebagai bagian dari perancangan awal, dibuat ilustrasi miniatur sistem yang merepresentasikan bentuk fisik atau implementasi awal dari alat yang akan dikembangkan. Miniatur ini bertujuan untuk memberikan gambaran visual mengenai integrasi antar komponen dalam skala sederhana.
+
+\begin{figure}[!ht]
+    \centering
+    \includegraphics[width=0.6\textwidth]{fig/miniatur_alat.png}
+    \caption{Ilustrasi Miniatur Sistem yang Dirancang}
+    \label{fig:miniatur_alat}
+\end{figure}
+
+Pada Gambar~\ref{fig:miniatur_alat}, ditunjukkan bagaimana komponen utama seperti sensor, unit pemrosesan, dan aktuator diintegrasikan dalam satu sistem. Miniatur ini tidak merepresentasikan desain final, melainkan sebagai validasi awal terhadap konsep sistem yang diusulkan.
+
+\subsection{Ilustrasi Penggunaan Sistem}
+\label{subsec:penggunaan}
+
+Selain aspek teknis, penting untuk menunjukkan bagaimana sistem akan digunakan dalam konteks nyata. Ilustrasi penggunaan sistem membantu menjelaskan interaksi antara pengguna dengan alat yang dirancang.
+
+\begin{figure}[!ht]
+    \centering
+    \includegraphics[width=0.6\textwidth]{fig/penggunaan_alat.png}
+    \caption{Ilustrasi Penggunaan Sistem oleh Pengguna}
+    \label{fig:penggunaan_alat}
+\end{figure}
+
+Gambar~\ref{fig:penggunaan_alat} menunjukkan skenario operasional sistem, termasuk bagaimana pengguna memberikan input, bagaimana sistem merespons, serta output yang dihasilkan. Ilustrasi ini penting untuk memastikan bahwa desain tidak hanya valid secara teknis, tetapi juga aplikatif dan ergonomis.
+
+\subsection{Pendekatan Perancangan Berdasarkan Jenis Produk}
+\label{subsec:pendekatan}
+
+Isi dari bagian perancangan umum sistem dapat bervariasi tergantung pada jenis luaran yang dihasilkan, yaitu:
+
+\begin{enumerate}
+    \item \textbf{Perangkat Keras (Hardware)} \\
+    Untuk produk berbasis perangkat keras, perancangan difokuskan pada blueprint sistem dalam bentuk diagram blok fungsional. Penjelasan tidak perlu sampai pada level detail komponen (misalnya resistor atau layout PCB), tetapi cukup pada hubungan antar modul utama.
+
+    \item \textbf{Sistem Aplikasi (Software / IT)} \\
+    Untuk produk berbasis perangkat lunak, perancangan disajikan dalam bentuk Data Flow Diagram (DFD), Entity Relationship Diagram (ERD), serta \textit{use case diagram}. Penjelasan bersifat umum dan belum sampai ke implementasi kode.
+
+    \item \textbf{Simulasi dan Model Matematis} \\
+    Untuk produk berupa simulasi, perancangan harus mencakup model matematis yang mendasari sistem. Model ini kemudian diikuti dengan metode atau algoritme penyelesaian, baik dalam bentuk persamaan matematis maupun flowchart.
+\end{enumerate}
+
+\subsection{Algoritme dan Alur Sistem}
+\label{subsec:algoritme_umum}
+
+Sebagai pelengkap, alur kerja sistem juga dapat direpresentasikan dalam bentuk diagram alir atau algoritme. Representasi ini menjelaskan logika operasional sistem secara berurutan dan sistematis, sehingga memudahkan implementasi pada tahap selanjutnya (Capstone 2).
+
+Dengan adanya integrasi antara diagram blok, ilustrasi miniatur, ilustrasi penggunaan, serta algoritme, diharapkan perancangan sistem yang disusun dapat memberikan gambaran yang utuh, baik dari sisi konseptual maupun implementatif.
+
+Bila produk/luaran yang ditawarkan berupa program simulasi lengkap, maka pada bagian ini peserta \textit{capstone} harus menyajikan model matematika secara umum yang nantinya akan dijabarkan. Demikian pula metode atau algoritme (model matematika maupun diagram alir) yang digunakan untuk menyelesaikan permasalahan tersebut.
+
+\section{Penyajian \textit{Flowchart}/Alur Kerja Alat}
+\titlelabel{sec:Penyajian_Flowchart}
+    
+    \begin{figure}[!ht]
+        \centering
+        \includegraphics[scale=0.5]{Ch08_Flowchart.pdf}
+        \caption{Contoh \textit{Flowchart} (Prosedur Perawatan Lampu)}
+        \label{fig:Ch08_Flowchart}
+    \end{figure}
+    
+    Peserta \textit{capstone} harus menyajikan pula model \textit{flowchart} sampai dengan proses pengujian dan verifikasi yang akan digunakan untuk menguji unjuk kerja dari desain yang dibuat. Mahasiswa bisa memilih untuk menggunakan diagram alir, diagram blok, atau algoritme. Salah satu contoh diagram alir dapat dilihat pada Gambar \ref{fig:Ch08_Flowchart}. Program simulasi lain dapat juga berupa program yang digunakan untuk menguji unjuk kerja algoritme yang digunakan untuk menjawab suatu permasalahan. Untuk bidang STL yang tidak menghasilkan perangkat keras maupun program simulasi lengkap, maka peserta \textit{capstone} harus mencantumkan model matematika yang umumnya digunakan. Misalkan, apabila problem yang diangkat berupa problem optimasi, maka peserta \textit{capstone} harus menyertakan \textit{model objective function} serta \textit{constraint} yang berkaitan, dan model algoritme optimasi yang dipakai untuk menyelesaikan problem optimasi berdasarkan sifat dari problem optimasi tersebut (misalkan : \textit{convex}/\textit{non-convex}, linear/\textit{quadratic}/fungsi lainnya, \textit{integer}).
