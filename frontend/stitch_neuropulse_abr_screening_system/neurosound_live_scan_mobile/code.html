@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>NeuroScan ABR - Live Scan Monitoring</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .waveform-container {
+            background: linear-gradient(180deg, rgba(3, 32, 52, 0.03) 0%, rgba(3, 32, 52, 0) 100%);
+        }
+        .scan-line {
+            box-shadow: 0 0 15px rgba(54, 104, 80, 0.5);
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "tertiary-container": "#522800",
+                        "outline": "#73777d",
+                        "on-primary": "#ffffff",
+                        "primary-container": "#1c354a",
+                        "on-tertiary": "#ffffff",
+                        "on-surface": "#1b1c1d",
+                        "on-secondary-container": "#3c6e56",
+                        "error-container": "#ffdad6",
+                        "secondary-container": "#b8efd1",
+                        "surface-container-low": "#f4f3f5",
+                        "on-primary-fixed-variant": "#31495f",
+                        "on-tertiary-container": "#e5832b",
+                        "on-surface-variant": "#43474c",
+                        "inverse-surface": "#2f3032",
+                        "on-tertiary-fixed": "#2f1400",
+                        "secondary-fixed-dim": "#9dd2b5",
+                        "on-background": "#1b1c1d",
+                        "surface-tint": "#496178",
+                        "inverse-on-surface": "#f2f0f2",
+                        "background": "#faf9fb",
+                        "surface-dim": "#dbd9db",
+                        "primary": "#032034",
+                        "surface-container": "#efedef",
+                        "on-primary-fixed": "#011d31",
+                        "primary-fixed": "#cde5ff",
+                        "on-error-container": "#93000a",
+                        "on-error": "#ffffff",
+                        "tertiary": "#331600",
+                        "surface-container-high": "#e9e8ea",
+                        "surface-container-highest": "#e3e2e4",
+                        "primary-fixed-dim": "#b0c9e4",
+                        "on-secondary-fixed-variant": "#1c503a",
+                        "on-secondary": "#ffffff",
+                        "tertiary-fixed-dim": "#ffb781",
+                        "on-primary-container": "#859eb7",
+                        "on-secondary-fixed": "#002114",
+                        "surface": "#faf9fb",
+                        "secondary": "#366850",
+                        "on-tertiary-fixed-variant": "#703800",
+                        "tertiary-fixed": "#ffdcc4",
+                        "surface-container-lowest": "#ffffff",
+                        "error": "#ba1a1a",
+                        "outline-variant": "#c3c7cd",
+                        "secondary-fixed": "#b8efd1",
+                        "surface-variant": "#e3e2e4",
+                        "surface-bright": "#faf9fb",
+                        "inverse-primary": "#b0c9e4"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "base": "4px",
+                        "sm": "8px",
+                        "xl": "32px",
+                        "gutter": "24px",
+                        "margin-desktop": "48px",
+                        "md": "16px",
+                        "lg": "24px",
+                        "margin-mobile": "16px",
+                        "xs": "4px"
+                    },
+                    "fontFamily": {
+                        "headline-sm": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "body-md": ["Inter"],
+                        "label-sm": ["Inter"],
+                        "headline-lg-mobile": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "body-sm": ["Inter"],
+                        "headline-lg": ["Inter"],
+                        "label-md": ["Inter"]
+                    },
+                    "fontSize": {
+                        "headline-sm": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                        "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                        "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                        "label-sm": ["11px", {"lineHeight": "14px", "fontWeight": "500"}],
+                        "headline-lg-mobile": ["24px", {"lineHeight": "32px", "fontWeight": "700"}],
+                        "body-lg": ["18px", {"lineHeight": "28px", "fontWeight": "400"}],
+                        "body-sm": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                        "headline-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                        "label-md": ["12px", {"lineHeight": "16px", "fontWeight": "600"}]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background font-body-md min-h-screen flex flex-col">
+<!-- Top App Bar -->
+<header class="flex justify-between items-center w-full px-margin-mobile h-16 z-50 bg-surface border-b border-outline-variant fixed top-0">
+<div class="flex items-center gap-sm">
+<span class="material-symbols-outlined text-primary" data-icon="sensors">sensors</span>
+<span class="font-title-lg text-headline-sm font-bold text-primary">NeuroScan ABR</span>
+</div>
+<div class="flex items-center gap-md">
+<span class="material-symbols-outlined text-on-surface-variant cursor-pointer active:opacity-80 transition-colors" data-icon="notifications">notifications</span>
+<span class="material-symbols-outlined text-on-surface-variant cursor-pointer active:opacity-80 transition-colors" data-icon="help_outline">help_outline</span>
+</div>
+</header>
+<main class="flex-grow pt-16 pb-32 px-margin-mobile">
+<!-- Patient Context -->
+<div class="py-md flex justify-between items-center">
+<div>
+<h1 class="font-headline-sm text-headline-sm text-on-surface">Patient: Smith, J.</h1>
+<p class="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Protocol: Standard Clinical ABR</p>
+</div>
+<div class="flex flex-col items-end">
+<span class="px-sm py-xs bg-secondary-container text-on-secondary-container rounded font-label-md text-label-md">LIVE SCANNING</span>
+<p class="font-label-md text-label-md text-primary mt-xs font-bold" id="timer">02:14.5</p>
+</div>
+</div>
+<!-- Waveform Center Stage -->
+<div class="relative w-full aspect-[4/3] bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden waveform-container mb-lg shadow-sm">
+<!-- Grid Lines -->
+<div class="absolute inset-0 grid grid-cols-5 grid-rows-4 pointer-events-none opacity-20">
+<div class="border-r border-outline-variant"></div>
+<div class="border-r border-outline-variant"></div>
+<div class="border-r border-outline-variant"></div>
+<div class="border-r border-outline-variant"></div>
+<div class="border-b border-outline-variant row-start-1 col-span-5"></div>
+<div class="border-b border-outline-variant row-start-2 col-span-5"></div>
+<div class="border-b border-outline-variant row-start-3 col-span-5"></div>
+</div>
+<!-- Waveform Canvas Mockup -->
+<svg class="absolute inset-0 w-full h-full" preserveaspectratio="none" viewbox="0 0 400 300">
+<path class="text-primary" d="M0 150 L50 140 L80 180 L110 130 L150 160 L200 120 L250 155 L300 135 L350 145 L400 150" fill="none" id="waveform-path" stroke="currentColor" stroke-width="2.5"></path>
+<path class="text-on-primary-container opacity-40" d="M0 150 L50 142 L80 175 L110 135 L150 162 L200 125 L250 158 L300 132 L350 148 L400 150" fill="none" stroke="currentColor" stroke-width="1.5"></path>
+</svg>
+<!-- Wave Markers -->
+<div class="absolute top-[125px] left-[75px] -translate-x-1/2 -translate-y-full text-center">
+<span class="font-label-sm text-label-sm text-primary font-bold">I</span>
+<div class="w-1.5 h-1.5 bg-primary rounded-full mx-auto mt-xs"></div>
+</div>
+<div class="absolute top-[115px] left-[145px] -translate-x-1/2 -translate-y-full text-center">
+<span class="font-label-sm text-label-sm text-primary font-bold">III</span>
+<div class="w-1.5 h-1.5 bg-primary rounded-full mx-auto mt-xs"></div>
+</div>
+<div class="absolute top-[105px] left-[195px] -translate-x-1/2 -translate-y-full text-center">
+<span class="font-label-sm text-label-sm text-primary font-bold">V</span>
+<div class="w-1.5 h-1.5 bg-primary rounded-full mx-auto mt-xs"></div>
+</div>
+<!-- Real-time Scan Line -->
+<div class="absolute top-0 bottom-0 w-[2px] bg-secondary scan-line" id="scan-line" style="left: 60%"></div>
+<div class="absolute bottom-sm right-sm bg-surface-container-high/80 px-sm py-xs rounded-md backdrop-blur-sm">
+<p class="font-label-sm text-label-sm text-on-surface-variant">Stimulus: 80 dB nHL Click</p>
+</div>
+</div>
+<!-- Latency Cards Bento Grid -->
+<div class="grid grid-cols-3 gap-md mb-xl">
+<!-- Wave I Card -->
+<div class="bg-surface-container-lowest border-t-4 border-secondary p-md rounded-xl border border-outline-variant shadow-sm transition-all active:scale-95">
+<p class="font-label-md text-label-md text-on-surface-variant mb-xs">Wave I</p>
+<div class="flex items-baseline gap-[2px]">
+<span class="font-headline-sm text-headline-sm text-primary">1.42</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">ms</span>
+</div>
+<div class="mt-sm flex items-center text-secondary">
+<span class="material-symbols-outlined text-[14px]" data-icon="check_circle">check_circle</span>
+<span class="font-label-sm text-label-sm ml-xs">Stable</span>
+</div>
+</div>
+<!-- Wave III Card -->
+<div class="bg-surface-container-lowest border-t-4 border-secondary p-md rounded-xl border border-outline-variant shadow-sm transition-all active:scale-95">
+<p class="font-label-md text-label-md text-on-surface-variant mb-xs">Wave III</p>
+<div class="flex items-baseline gap-[2px]">
+<span class="font-headline-sm text-headline-sm text-primary">3.68</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">ms</span>
+</div>
+<div class="mt-sm flex items-center text-secondary">
+<span class="material-symbols-outlined text-[14px]" data-icon="check_circle">check_circle</span>
+<span class="font-label-sm text-label-sm ml-xs">Stable</span>
+</div>
+</div>
+<!-- Wave V Card -->
+<div class="bg-surface-container-lowest border-t-4 border-tertiary p-md rounded-xl border border-outline-variant shadow-sm transition-all active:scale-95">
+<p class="font-label-md text-label-md text-on-surface-variant mb-xs">Wave V</p>
+<div class="flex items-baseline gap-[2px]">
+<span class="font-headline-sm text-headline-sm text-tertiary">5.51</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">ms</span>
+</div>
+<div class="mt-sm flex items-center text-tertiary">
+<span class="material-symbols-outlined text-[14px]" data-icon="pending">pending</span>
+<span class="font-label-sm text-label-sm ml-xs">Syncing</span>
+</div>
+</div>
+</div>
+<!-- Technical Metrics -->
+<div class="bg-surface-container-low rounded-xl p-md border border-outline-variant/50">
+<h3 class="font-label-md text-label-md text-primary uppercase font-bold mb-md">Impedance &amp; Noise</h3>
+<div class="space-y-md">
+<div class="flex justify-between items-center">
+<span class="font-body-sm text-body-sm text-on-surface-variant">Noise Floor</span>
+<div class="flex items-center gap-sm">
+<div class="w-24 h-2 bg-surface-container-highest rounded-full overflow-hidden">
+<div class="w-3/4 h-full bg-secondary"></div>
+</div>
+<span class="font-label-md text-label-md text-on-surface">34 nV</span>
+</div>
+</div>
+<div class="flex justify-between items-center">
+<span class="font-body-sm text-body-sm text-on-surface-variant">Electrode Z</span>
+<span class="font-label-md text-label-md text-secondary">2.4 kΩ • Optimal</span>
+</div>
+</div>
+</div>
+</main>
+<!-- Control Actions Docked Bottom -->
+<nav class="fixed bottom-0 left-0 w-full bg-surface-container-lowest border-t border-outline-variant px-margin-mobile py-lg z-50 flex items-center gap-lg">
+<button class="flex-1 flex items-center justify-center gap-sm bg-primary-container text-on-primary-container h-14 rounded-xl font-headline-sm text-headline-sm active:scale-95 transition-all" id="pauseBtn">
+<span class="material-symbols-outlined" data-icon="pause">pause</span>
+<span>Pause</span>
+</button>
+<button class="flex-1 flex items-center justify-center gap-sm bg-error text-on-error h-14 rounded-xl font-headline-sm text-headline-sm active:scale-95 transition-all shadow-lg shadow-error/20" id="stopBtn">
+<span class="material-symbols-outlined" data-icon="stop">stop</span>
+<span>Stop</span>
+</button>
+</nav>
+<script>
+        // Subtle Waveform Animation
+        const path = document.getElementById('waveform-path');
+        const scanLine = document.getElementById('scan-line');
+        const timerText = document.getElementById('timer');
+        let progress = 0;
+        let time = 134.5; // Starts at 02:14.5
+
+        function updateWaveform() {
+            progress = (progress + 0.5) % 100;
+            scanLine.style.left = progress + '%';
+            
+            // Random jitter for simulation
+            if (Math.random() > 0.8) {
+                const points = [
+                    "M0 150",
+                    "L50 " + (138 + Math.random() * 4),
+                    "L80 " + (178 + Math.random() * 4),
+                    "L110 " + (128 + Math.random() * 4),
+                    "L150 " + (158 + Math.random() * 4),
+                    "L200 " + (118 + Math.random() * 4),
+                    "L250 " + (153 + Math.random() * 4),
+                    "L300 " + (133 + Math.random() * 4),
+                    "L350 " + (143 + Math.random() * 4),
+                    "L400 150"
+                ].join(" ");
+                path.setAttribute('d', points);
+            }
+
+            // Timer update
+            time += 0.016;
+            const mins = Math.floor(time / 60);
+            const secs = (time % 60).toFixed(1);
+            timerText.textContent = `${mins.toString().padStart(2, '0')}:${secs.padStart(4, '0')}`;
+
+            requestAnimationFrame(updateWaveform);
+        }
+
+        updateWaveform();
+
+        // Button Interactions
+        const pauseBtn = document.getElementById('pauseBtn');
+        let isPaused = false;
+        pauseBtn.addEventListener('click', () => {
+            isPaused = !isPaused;
+            pauseBtn.innerHTML = isPaused 
+                ? '<span class="material-symbols-outlined">play_arrow</span><span>Resume</span>' 
+                : '<span class="material-symbols-outlined">pause</span><span>Pause</span>';
+            pauseBtn.classList.toggle('bg-primary-container');
+            pauseBtn.classList.toggle('bg-secondary-container');
+        });
+
+        document.getElementById('stopBtn').addEventListener('click', () => {
+            if(confirm("Are you sure you want to stop the scan? Progress will be saved to history.")) {
+                window.location.reload();
+            }
+        });
+    </script>
+</body></html>

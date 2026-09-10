@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Simulasi Fixed Window Epoching — ABR</title>
+<style>
+:root{--bg:#0d1117;--panel:#161b22;--border:#30363d;--text:#e6edf3;--muted:#8b949e;--accent:#58a6ff;--green:#3fb950;--yellow:#d29922;--red:#f85149;--orange:#ffa657;--purple:#bc8cff;--mono:'Courier New',monospace}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px;padding:16px}
+.header{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+.header h1{font-size:15px;font-weight:700}
+.badge{padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600}
+.badge-blue{background:rgba(88,166,255,.15);color:var(--accent);border:1px solid rgba(88,166,255,.3)}
+.badge-green{background:rgba(63,185,80,.2);color:var(--green);border:1px solid rgba(63,185,80,.4)}
+.badge-orange{background:rgba(255,166,87,.15);color:var(--orange);border:1px solid rgba(255,166,87,.3)}
+.badge-purple{background:rgba(188,140,255,.15);color:var(--purple);border:1px solid rgba(188,140,255,.3)}
+.controls{display:flex;gap:10px;flex-wrap:wrap;padding:10px 14px;background:var(--panel);border:1px solid var(--border);border-radius:8px;margin-bottom:12px;align-items:center}
+.ctrl-group{display:flex;gap:6px;align-items:center}
+label{color:var(--muted);font-size:11px;white-space:nowrap}
+select{padding:4px 8px;background:#21262d;border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;cursor:pointer}
+button{padding:5px 14px;border-radius:6px;border:1px solid var(--border);background:#21262d;color:var(--text);font-size:12px;cursor:pointer;font-weight:600}
+button:hover{background:#30363d}
+button.primary{background:rgba(63,185,80,.15);border-color:var(--green);color:var(--green)}
+button.primary.paused{background:rgba(248,81,73,.12);border-color:var(--red);color:var(--red)}
+.status-bar{display:flex;gap:18px;padding:8px 14px;background:var(--panel);border:1px solid var(--border);border-radius:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center}
+.stat{display:flex;gap:6px;align-items:center}
+.stat-lbl{color:var(--muted);font-size:11px}
+.stat-val{font-family:var(--mono);font-size:12px;font-weight:700}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--green);animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:10px}
+.panel-header{padding:7px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.02);flex-wrap:wrap}
+.panel-title{font-weight:700;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+canvas{display:block;width:100%;background:#0a0e14}
+.epoch-colors{display:flex;gap:8px;margin-left:auto}
+.ec{padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>📐 Simulasi Fixed-Window Epoching — Sinyal Kontinyu → ABR Average</h1>
+  <span class="badge badge-blue">ADS1115 @ 860 SPS</span>
+  <span class="badge badge-orange">Epoch 50ms</span>
+  <span class="badge badge-green">Running Average</span>
+</div>
+
+<div class="controls">
+  <div class="ctrl-group">
+    <label>Panjang Epoch</label>
+    <select id="selEpoch">
+      <option value="25">25 ms</option>
+      <option value="50" selected>50 ms</option>
+      <option value="100">100 ms</option>
+    </select>
+  </div>
+  <div class="ctrl-group">
+    <label>Interval Stimulus</label>
+    <select id="selStimInt">
+      <option value="91" selected>91 ms (~11/dtk)</option>
+      <option value="182">182 ms (~5.5/dtk)</option>
+      <option value="500">500 ms (2/dtk)</option>
+    </select>
+  </div>
+  <div class="ctrl-group">
+    <label>dB Level</label>
+    <select id="selDb">
+      <option value="60">60 dB</option>
+      <option value="70">70 dB</option>
+      <option value="80" selected>80 dB</option>
+      <option value="90">90 dB</option>
+    </select>
+  </div>
+  <div class="ctrl-group">
+    <label>Epoch ditampilkan</label>
+    <select id="selShowN">
+      <option value="4" selected>4 epoch</option>
+      <option value="6">6 epoch</option>
+      <option value="8">8 epoch</option>
+    </select>
+  </div>
+  <div class="ctrl-group" style="margin-left:auto">
+    <button class="primary" id="btnPlay">⏸ Jeda</button>
+    <button id="btnReset">🔄 Reset</button>
+  </div>
+</div>
+
+<div class="status-bar">
+  <div class="stat"><div class="dot"></div></div>
+  <div class="stat"><span class="stat-lbl">Stimulus</span><span class="stat-val" id="sStim" style="color:var(--yellow)">0</span></div>
+  <div class="stat"><span class="stat-lbl">Epoch Lengkap</span><span class="stat-val" id="sEpoch" style="color:var(--orange)">0</span></div>
+  <div class="stat"><span class="stat-lbl">Trials</span><span class="stat-val" id="sTrials" style="color:var(--purple)">0</span></div>
+  <div class="stat"><span class="stat-lbl">SNR (ch0)</span><span class="stat-val" id="sSNR" style="color:var(--green)">—</span></div>
+  <div class="stat"><span class="stat-lbl">Waktu Sim</span><span class="stat-val" id="sTime" style="color:var(--accent)">0.0 s</span></div>
+</div>
+
+<!-- Panel 1: Sinyal Kontinyu -->
+<div class="panel">
+  <div class="panel-header">
+    <span class="panel-title">① Sinyal Kontinyu — ADS1115 Raw (mV)</span>
+    <span style="font-size:11px;color:var(--muted);margin-left:4px">Window 600ms terakhir</span>
+    <div style="margin-left:auto;display:flex;gap:10px;font-size:11px;align-items:center">
+      <span style="color:var(--yellow)">▏ = Stimulus</span>
+      <span style="background:rgba(88,166,255,.1);padding:1px 6px;border-radius:3px;border:1px solid rgba(88,166,255,.2);color:var(--accent)">Epoch window</span>
+    </div>
+  </div>
+  <canvas id="cCont" height="160"></canvas>
+</div>
+
+<!-- Panel 2: Epoch tersekstrak -->
+<div class="panel">
+  <div class="panel-header">
+    <span class="panel-title">② Epoch Tersekstrak (terakhir 4 trial)</span>
+    <div class="epoch-colors" id="epochColors"></div>
+  </div>
+  <canvas id="cEpochs" height="180"></canvas>
+</div>
+
+<!-- Panel 3: Rata-rata -->
+<div class="panel">
+  <div class="panel-header">
+    <span class="panel-title">③ Rata-rata Epoch (Running ABR Average)</span>
+    <div style="margin-left:auto;font-size:11px;display:flex;gap:12px;align-items:center">
+      <span style="color:var(--purple)">— ABR Average</span>
+      <span style="color:var(--muted)">— Noise floor</span>
+    </div>
+  </div>
+  <canvas id="cAvg" height="160"></canvas>
+</div>
+
+<script>
+// ── Parameters ────────────────────────────────────────────────
+const FS = 860; // ADS1115 sample rate
+const WAVE_WINDOW_MS = 600;
+const WAVE_SAMPLES = Math.round(FS * WAVE_WINDOW_MS / 1000);
+const EPOCH_COLORS = ['#58a6ff','#ffa657','#3fb950','#bc8cff','#f85149','#79c0ff','#d29922','#56d364'];
+
+// ── State ──────────────────────────────────────────────────────
+let running = true;
+let epochMs = 50, stimInt = 91, dbLevel = 80, showN = 4;
+let epochSamples = Math.round(FS * epochMs / 1000);
+
+let sigBuf     = new Float64Array(WAVE_SAMPLES);
+let stimBuf    = new Uint8Array(WAVE_SAMPLES);
+let waveHead   = 0;
+let simMs      = 0;
+let lastStimMs = 0;
+let stimCount  = 0;
+let trialCount = 0;
+
+let abrAvg       = new Float64Array(1);
+let epochs       = [];        // last showN epochs
+let inEpoch      = false;
+let epochBuf     = [];
+let lastTickTime = performance.now();
+
+// ── Dummy data dari dummy.json ────────────────────────────────
+let dummyRaw = null, dummyStim = null, dummyRawIdx = 0;
+const LSB_TO_MV = 4096 / 32768 / 1000; // 0.125 mV/LSB → mV
+
+// ── Noise state (fallback jika dummy tidak ada) ───────────────
+let noise = 0, t = 0, lastStimSample = -9999;
+
+const dbScale = { 60:0.25, 70:0.5, 80:1.0, 90:1.6 };
+const abrWaves = [
+  {d:4,  a:0.15, w:1.8},  // Wave I
+  {d:12, a:0.10, w:2.5},  // Wave III
+  {d:20, a:0.25, w:3.5},  // Wave V
+  {d:28, a:0.07, w:2.5},  // Wave VI
+];
+
+function genSample(isStim) {
+  // Jika dummy.json sudah loaded, pakai data nyata
+  if (dummyRaw) {
+    const idx = dummyRawIdx % dummyRaw.length;
+    const mv  = dummyRaw[idx] * 0.125; // LSB → mV
+    dummyRawIdx++;
+    return mv;
+  }
+  // Fallback: generator sintetis
+  noise += (Math.random() - 0.5) * 0.035;
+  noise *= 0.988;
+  const plf  = Math.sin(2*Math.PI * 50 * t / FS) * 0.012;
+  const alpha = Math.sin(2*Math.PI * 10 * t / FS) * 0.06
+                * Math.max(0, Math.sin(2*Math.PI * 0.4 * t / FS));
+  if (isStim) lastStimSample = t;
+  const scale = dbScale[dbLevel] || 1.0;
+  let abr = 0;
+  const age = t - lastStimSample;
+  if (age >= 0 && age < 60) {
+    const pol = stimCount % 2 === 0 ? 1 : -1;
+    for (const w of abrWaves) {
+      const dt = age - w.d;
+      abr += pol * scale * w.a * Math.exp(-dt*dt / (2*w.w*w.w));
+    }
+  }
+  t++;
+  return (noise + plf + alpha + abr) * (4096/32768) * 1000; // mV
+}
+
+// ── Canvas helper ─────────────────────────────────────────────
+function setupCanvas(id) {
+  const c = document.getElementById(id);
+  const dpr = window.devicePixelRatio || 1;
+  c.width = c.offsetWidth * dpr;
+  c.height = c.offsetHeight * dpr;
+  const ctx = c.getContext('2d');
+  ctx.scale(dpr, dpr);
+  return { ctx, W: c.offsetWidth, H: c.offsetHeight };
+}
+
+// ── Draw continuous signal ────────────────────────────────────
+function drawCont() {
+  const { ctx, W, H } = setupCanvas('cCont');
+  ctx.clearRect(0, 0, W, H);
+  const PAD = { l: 48, r: 12, t: 12, b: 24 };
+  const PW = W - PAD.l - PAD.r, PH = H - PAD.t - PAD.b;
+  const SCALE = dummyRaw ? 30 : 0.6; // auto: ±30mV (dummy) atau ±0.6mV (generator)
+  const mid = PAD.t + PH / 2;
+
+  // Grid
+  ctx.strokeStyle = '#1c2430'; ctx.lineWidth = 1;
+  [-SCALE, -SCALE/2, 0, SCALE/2, SCALE].forEach(v => {
+    const y = mid - (v/SCALE) * PH/2;
+    ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(W-PAD.r, y); ctx.stroke();
+    ctx.fillStyle='#8b949e'; ctx.font='10px Courier New'; ctx.textAlign='right';
+    ctx.fillText((v === 0 ? '0' : (v>0?'+':'')+v.toFixed(1))+'mV', PAD.l-3, y+4);
+  });
+  // X ticks
+  const nXtick = 6;
+  for (let i = 0; i <= nXtick; i++) {
+    const x = PAD.l + PW * i / nXtick;
+    ctx.beginPath(); ctx.moveTo(x, PAD.t); ctx.lineTo(x, H-PAD.b); ctx.stroke();
+    ctx.fillStyle='#8b949e'; ctx.font='10px Courier New'; ctx.textAlign='center';
+    ctx.fillText((WAVE_WINDOW_MS * (nXtick-i) / nXtick).toFixed(0)+'ms ago', x, H-PAD.b+14);
+  }
+
+  // Draw epoch windows (highlight)
+  const epochW = PW * epochMs / WAVE_WINDOW_MS;
+  for (let i = 0; i < WAVE_SAMPLES; i++) {
+    const idx = (waveHead + i) % WAVE_SAMPLES;
+    if (stimBuf[idx] === 1) {
+      const x = PAD.l + PW * i / WAVE_SAMPLES;
+      if (x + epochW <= W - PAD.r) {
+        ctx.fillStyle = 'rgba(88,166,255,0.08)';
+        ctx.fillRect(x, PAD.t, epochW, PH);
+        ctx.strokeStyle = 'rgba(88,166,255,0.35)'; ctx.lineWidth = 1; ctx.setLineDash([]);
+        ctx.strokeRect(x, PAD.t, epochW, PH);
+      }
+    }
+  }
+
+  // Waveform
+  ctx.strokeStyle = '#3fb950'; ctx.lineWidth = 1.5; ctx.setLineDash([]);
+  ctx.beginPath();
+  let first = true;
+  for (let i = 0; i < WAVE_SAMPLES; i++) {
+    const idx = (waveHead + i) % WAVE_SAMPLES;
+    const mv = sigBuf[idx];
+    const x = PAD.l + PW * i / WAVE_SAMPLES;
+    const y = mid - (mv / SCALE) * PH / 2;
+    const yc = Math.max(PAD.t, Math.min(PAD.t+PH, y));
+    first ? ctx.moveTo(x, yc) : ctx.lineTo(x, yc);
+    first = false;
+  }
+  ctx.stroke();
+
+  // Stimulus markers
+  for (let i = 0; i < WAVE_SAMPLES; i++) {
+    const idx = (waveHead + i) % WAVE_SAMPLES;
+    if (stimBuf[idx] === 1) {
+      const x = PAD.l + PW * i / WAVE_SAMPLES;
+      ctx.strokeStyle = 'rgba(210,153,34,0.85)'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(x, PAD.t); ctx.lineTo(x, H-PAD.b); ctx.stroke();
+      ctx.fillStyle = '#d29922'; ctx.font = 'bold 9px Courier New'; ctx.textAlign = 'center';
+      ctx.fillText('S', x, PAD.t + 10);
+    }
+  }
+  // Zero line
+  ctx.strokeStyle = 'rgba(139,148,158,0.25)'; ctx.lineWidth=1; ctx.setLineDash([3,4]);
+  ctx.beginPath(); ctx.moveTo(PAD.l, mid); ctx.lineTo(W-PAD.r, mid); ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+// ── Draw epochs ───────────────────────────────────────────────
+function drawEpochs() {
+  const { ctx, W, H } = setupCanvas('cEpochs');
+  ctx.clearRect(0, 0, W, H);
+  if (epochs.length === 0) {
+    ctx.fillStyle = '#8b949e'; ctx.font = '12px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('Menunggu epoch…', W/2, H/2);
+    return;
+  }
+  const PAD = { l: 48, r: 12, t: 14, b: 28 };
+  const PW = W - PAD.l - PAD.r, PH = H - PAD.t - PAD.b;
+  const SCALE = dummyRaw ? 30 : 0.35; // auto scale
+  const mid = PAD.t + PH / 2;
+
+  // Grid
+  ctx.strokeStyle = '#1c2430'; ctx.lineWidth = 1;
+  [-SCALE, 0, SCALE].forEach(v => {
+    const y = mid - (v/SCALE) * PH/2;
+    ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(W-PAD.r, y); ctx.stroke();
+    ctx.fillStyle='#8b949e'; ctx.font='10px Courier New'; ctx.textAlign='right';
+    ctx.fillText((v>0?'+':'')+v.toFixed(2)+'mV', PAD.l-3, y+4);
+  });
+  // X labels (ms)
+  [0, epochMs*0.25, epochMs*0.5, epochMs*0.75, epochMs].forEach(ms => {
+    const x = PAD.l + PW * ms / epochMs;
+    ctx.beginPath(); ctx.moveTo(x, PAD.t); ctx.lineTo(x, H-PAD.b); ctx.stroke();
+    ctx.fillStyle='#8b949e'; ctx.font='10px Courier New'; ctx.textAlign='center';
+    ctx.fillText(ms.toFixed(0)+'ms', x, H-PAD.b+14);
+  });
+
+  // Draw each epoch
+  epochs.forEach((ep, ei) => {
+    const color = EPOCH_COLORS[ei % EPOCH_COLORS.length];
+    ctx.strokeStyle = color + (ei === epochs.length-1 ? 'ff' : '88');
+    ctx.lineWidth = ei === epochs.length-1 ? 2 : 1.2;
+    ctx.beginPath();
+    let first = true;
+    for (let i = 0; i < ep.length; i++) {
+      const x = PAD.l + PW * i / epochSamples;
+      const y = mid - (ep[i] / SCALE) * PH / 2;
+      const yc = Math.max(PAD.t, Math.min(PAD.t+PH, y));
+      first ? ctx.moveTo(x, yc) : ctx.lineTo(x, yc);
+      first = false;
+    }
+    ctx.stroke();
+    // Trial label
+    const trialNum = trialCount - epochs.length + ei + 1;
+    ctx.fillStyle = color;
+    ctx.font = '9px Courier New'; ctx.textAlign = 'left';
+    ctx.fillText(`T${trialNum}`, PAD.l + 4, PAD.t + 14 + ei * 13);
+  });
+
+  // Epoch legend colors (header)
+  const hdr = document.getElementById('epochColors');
+  hdr.innerHTML = '';
+  epochs.forEach((ep, ei) => {
+    const color = EPOCH_COLORS[ei % EPOCH_COLORS.length];
+    const trialNum = trialCount - epochs.length + ei + 1;
+    const sp = document.createElement('span');
+    sp.className = 'ec';
+    sp.style.background = color + '20';
+    sp.style.border = `1px solid ${color}`;
+    sp.style.color = color;
+    sp.textContent = `T${trialNum}`;
+    hdr.appendChild(sp);
+  });
+}
+
+// ── Draw average ───────────────────────────────────────────────
+function drawAvg() {
+  const { ctx, W, H } = setupCanvas('cAvg');
+  ctx.clearRect(0, 0, W, H);
+  if (trialCount === 0) {
+    ctx.fillStyle='#8b949e'; ctx.font='12px sans-serif'; ctx.textAlign='center';
+    ctx.fillText('Menunggu trials…', W/2, H/2);
+    return;
+  }
+  const PAD = { l: 48, r: 12, t: 14, b: 28 };
+  const PW = W - PAD.l - PAD.r, PH = H - PAD.t - PAD.b;
+  const SCALE = dummyRaw ? 5 : 0.25; // ABR average: lebih kecil dari sinyal mentah
+  const mid = PAD.t + PH / 2;
+
+  ctx.strokeStyle = '#1c2430'; ctx.lineWidth = 1;
+  [-SCALE, -SCALE/2, 0, SCALE/2, SCALE].forEach(v => {
+    const y = mid - (v/SCALE) * PH/2;
+    ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(W-PAD.r, y); ctx.stroke();
+    ctx.fillStyle='#8b949e'; ctx.font='10px Courier New'; ctx.textAlign='right';
+    ctx.fillText((v>0?'+':'')+v.toFixed(2)+'mV', PAD.l-3, y+4);
+  });
+  [0, epochMs*0.25, epochMs*0.5, epochMs*0.75, epochMs].forEach(ms => {
+    const x = PAD.l + PW * ms / epochMs;
+    ctx.beginPath(); ctx.moveTo(x, PAD.t); ctx.lineTo(x, H-PAD.b); ctx.stroke();
+    ctx.fillStyle='#8b949e'; ctx.font='10px Courier New'; ctx.textAlign='center';
+    ctx.fillText(ms.toFixed(0)+'ms', x, H-PAD.b+14);
+  });
+
+  // Noise floor estimate (std of baseline)
+  let noiseEst = 0;
+  for (let i = 0; i < Math.min(5, epochSamples); i++) noiseEst += abrAvg[i]*abrAvg[i];
+  noiseEst = Math.sqrt(noiseEst / 5);
+  // Noise band
+  ctx.fillStyle = 'rgba(139,148,158,0.08)';
+  ctx.fillRect(PAD.l, mid - (noiseEst/SCALE)*PH/2, PW, (noiseEst/SCALE)*PH);
+
+  // ABR average
+  ctx.strokeStyle = '#bc8cff'; ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  let first = true;
+  for (let i = 0; i < epochSamples; i++) {
+    const x = PAD.l + PW * i / epochSamples;
+    const y = mid - (abrAvg[i] / SCALE) * PH / 2;
+    const yc = Math.max(PAD.t, Math.min(PAD.t+PH, y));
+    first ? ctx.moveTo(x, yc) : ctx.lineTo(x, yc);
+    first = false;
+  }
+  ctx.stroke();
+
+  // Wave markers
+  const waveMs = [1000/FS*4, 1000/FS*12, 1000/FS*20];
+  const wNames = ['I','III','V'];
+  waveMs.forEach((ms, wi) => {
+    const x = PAD.l + PW * ms / epochMs;
+    if (x > W-PAD.r) return;
+    ctx.strokeStyle='rgba(188,140,255,0.4)'; ctx.lineWidth=1; ctx.setLineDash([3,3]);
+    ctx.beginPath(); ctx.moveTo(x, PAD.t); ctx.lineTo(x, H-PAD.b); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle='rgba(188,140,255,0.8)'; ctx.font='bold 10px Courier New'; ctx.textAlign='center';
+    ctx.fillText(wNames[wi], x, PAD.t+12);
+  });
+
+  // Zero line
+  ctx.strokeStyle='rgba(139,148,158,0.25)'; ctx.lineWidth=1; ctx.setLineDash([3,4]);
+  ctx.beginPath(); ctx.moveTo(PAD.l, mid); ctx.lineTo(W-PAD.r, mid); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // SNR
+  let signal = 0;
+  for (let i = 3; i < Math.min(25, epochSamples); i++) signal = Math.max(signal, Math.abs(abrAvg[i]));
+  const snr = noiseEst > 0 ? (20 * Math.log10(signal / noiseEst)).toFixed(1) : '—';
+  document.getElementById('sSNR').textContent = snr + (snr !== '—' ? ' dB' : '');
+
+  // Trial info top-right
+  ctx.fillStyle='rgba(13,17,23,0.75)'; ctx.fillRect(W-PAD.r-110, PAD.t+4, 106, 36);
+  ctx.strokeStyle='#30363d'; ctx.lineWidth=1; ctx.strokeRect(W-PAD.r-110, PAD.t+4, 106, 36);
+  ctx.fillStyle='#bc8cff'; ctx.font='bold 11px Courier New'; ctx.textAlign='left';
+  ctx.fillText(`Trials: ${trialCount}`, W-PAD.r-104, PAD.t+18);
+  ctx.fillStyle='#8b949e'; ctx.font='10px Courier New';
+  ctx.fillText(`SNR:  ${snr}${snr!=='—'?' dB':''}`, W-PAD.r-104, PAD.t+32);
+}
+
+// ── Tick ──────────────────────────────────────────────────────
+function tick() {
+  if (!running) return;
+  const now = performance.now();
+  const dt  = now - lastTickTime;
+  lastTickTime = now;
+
+  const sampToGen = Math.round(FS / 1000 * dt);
+  for (let i = 0; i < sampToGen; i++) {
+    simMs += 1000 / FS;
+    const isStim = (simMs - lastStimMs) >= stimInt;
+    if (isStim) {
+      lastStimMs = simMs;
+      stimCount++;
+      inEpoch = true;
+      epochBuf = [];
+      document.getElementById('sStim').textContent = stimCount;
+    }
+
+    const mv = genSample(isStim);
+    sigBuf[waveHead] = mv;
+    stimBuf[waveHead] = isStim ? 1 : 0;
+    waveHead = (waveHead + 1) % WAVE_SAMPLES;
+
+    if (inEpoch) {
+      epochBuf.push(mv);
+      if (epochBuf.length >= epochSamples) {
+        inEpoch = false;
+        trialCount++;
+        epochs.push([...epochBuf]);
+        if (epochs.length > showN) epochs.shift();
+        // Running average
+        if (abrAvg.length !== epochSamples) abrAvg = new Float64Array(epochSamples);
+        const n = trialCount;
+        for (let j = 0; j < epochSamples; j++) {
+          abrAvg[j] = (abrAvg[j] * (n-1) + epochBuf[j]) / n;
+        }
+        document.getElementById('sEpoch').textContent = epochs.length;
+        document.getElementById('sTrials').textContent = trialCount;
+      }
+    }
+  }
+  document.getElementById('sTime').textContent = (simMs/1000).toFixed(1) + ' s';
+
+  drawCont();
+  drawEpochs();
+  drawAvg();
+  requestAnimationFrame(tick);
+}
+
+// ── Controls ──────────────────────────────────────────────────
+function resetSim() {
+  sigBuf.fill(0); stimBuf.fill(0); waveHead = 0;
+  simMs = 0; lastStimMs = 0; stimCount = 0; trialCount = 0;
+  abrAvg = new Float64Array(epochSamples); epochs = [];
+  epochBuf = []; inEpoch = false;
+  noise = 0; t = 0; lastStimSample = -9999;
+  ['sStim','sEpoch','sTrials'].forEach(id => document.getElementById(id).textContent = '0');
+  document.getElementById('sSNR').textContent = '—';
+  document.getElementById('epochColors').innerHTML = '';
+}
+
+function applyParams() {
+  epochMs      = parseInt(document.getElementById('selEpoch').value);
+  stimInt      = parseInt(document.getElementById('selStimInt').value);
+  dbLevel      = parseInt(document.getElementById('selDb').value);
+  showN        = parseInt(document.getElementById('selShowN').value);
+  epochSamples = Math.round(FS * epochMs / 1000);
+  resetSim();
+}
+
+['selEpoch','selStimInt','selDb','selShowN'].forEach(id =>
+  document.getElementById(id).addEventListener('change', applyParams));
+
+document.getElementById('btnPlay').addEventListener('click', function() {
+  running = !running;
+  this.textContent = running ? '⏸ Jeda' : '▶ Lanjut';
+  this.classList.toggle('paused', !running);
+  if (running) { lastTickTime = performance.now(); requestAnimationFrame(tick); }
+});
+
+document.getElementById('btnReset').addEventListener('click', () => { applyParams(); drawCont(); drawEpochs(); drawAvg(); });
+
+window.addEventListener('resize', () => { drawCont(); drawEpochs(); drawAvg(); });
+
+// Start
+applyParams();
+requestAnimationFrame(tick);
+
+// Load dummy.json → pakai raw ADC values sebagai sinyal nyata
+fetch('data/dummy.json')
+  .then(r => r.json())
+  .then(d => {
+    dummyRaw  = d.raw_samples;  // int16 values
+    dummyStim = d.raw_stim;     // 0/1 stimulus flags
+    console.log('[EPOCHING] dummy loaded:', dummyRaw.length, 'samples');
+  })
+  .catch(() => console.log('[EPOCHING] dummy.json tidak ada, pakai generator'));
+</script>
+</body>
+</html>

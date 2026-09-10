@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Neurosound - Scan Results</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-surface-variant": "#43474c",
+                        "tertiary-fixed": "#ffdcc4",
+                        "secondary-fixed-dim": "#9dd2b5",
+                        "on-surface": "#1b1c1d",
+                        "surface": "#faf9fb",
+                        "secondary-fixed": "#b8efd1",
+                        "surface-bright": "#faf9fb",
+                        "tertiary-fixed-dim": "#ffb781",
+                        "on-primary": "#ffffff",
+                        "secondary-container": "#b8efd1",
+                        "inverse-on-surface": "#f2f0f2",
+                        "primary-container": "#1c354a",
+                        "surface-variant": "#e3e2e4",
+                        "secondary": "#366850",
+                        "on-error-container": "#93000a",
+                        "outline": "#73777d",
+                        "outline-variant": "#c3c7cd",
+                        "primary": "#032034",
+                        "on-secondary-container": "#3c6e56",
+                        "on-secondary-fixed-variant": "#1c503a",
+                        "on-primary-container": "#859eb7",
+                        "on-background": "#1b1c1d",
+                        "inverse-surface": "#2f3032",
+                        "primary-fixed": "#cde5ff",
+                        "tertiary": "#331600",
+                        "on-tertiary-container": "#e5832b",
+                        "on-primary-fixed-variant": "#31495f",
+                        "on-secondary": "#ffffff",
+                        "surface-container-highest": "#e3e2e4",
+                        "primary-fixed-dim": "#b0c9e4",
+                        "on-secondary-fixed": "#002114",
+                        "surface-tint": "#496178",
+                        "on-tertiary-fixed": "#2f1400",
+                        "on-tertiary-fixed-variant": "#703800",
+                        "surface-container-high": "#e9e8ea",
+                        "background": "#faf9fb",
+                        "surface-container-low": "#f4f3f5",
+                        "on-primary-fixed": "#011d31",
+                        "surface-container-lowest": "#ffffff",
+                        "error-container": "#ffdad6",
+                        "on-tertiary": "#ffffff",
+                        "surface-container": "#efedef",
+                        "error": "#ba1a1a",
+                        "inverse-primary": "#b0c9e4",
+                        "on-error": "#ffffff",
+                        "tertiary-container": "#522800",
+                        "surface-dim": "#dbd9db"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "margin-desktop": "48px",
+                        "xl": "32px",
+                        "base": "4px",
+                        "xs": "4px",
+                        "lg": "24px",
+                        "gutter": "24px",
+                        "margin-mobile": "16px",
+                        "sm": "8px",
+                        "md": "16px"
+                    },
+                    "fontFamily": {
+                        "label-sm": ["Inter"],
+                        "label-md": ["Inter"],
+                        "body-sm": ["Inter"],
+                        "headline-lg": ["Inter"],
+                        "body-md": ["Inter"],
+                        "headline-sm": ["Inter"],
+                        "headline-lg-mobile": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "headline-md": ["Inter"]
+                    },
+                    "fontSize": {
+                        "label-sm": ["11px", {"lineHeight": "14px", "fontWeight": "500"}],
+                        "label-md": ["12px", {"lineHeight": "16px", "fontWeight": "600"}],
+                        "body-sm": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                        "headline-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                        "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                        "headline-sm": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                        "headline-lg-mobile": ["24px", {"lineHeight": "32px", "fontWeight": "700"}],
+                        "body-lg": ["18px", {"lineHeight": "28px", "fontWeight": "400"}],
+                        "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .waveform-path {
+            stroke-dasharray: 1000;
+            stroke-dashoffset: 1000;
+            animation: dash 3s ease-in-out forwards;
+        }
+        @keyframes dash {
+            to { stroke-dashoffset: 0; }
+        }
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface font-body-md selection:bg-secondary-fixed selection:text-on-secondary-fixed">
+<div class="flex h-screen overflow-hidden">
+<!-- SideNavBar -->
+<aside class="h-full w-64 hidden lg:flex flex-col border-r border-outline-variant bg-surface">
+<div class="p-lg flex items-center gap-md">
+<span class="material-symbols-outlined text-primary" style="font-size: 32px;">neurology</span>
+<div class="flex flex-col">
+<span class="font-headline-sm text-headline-sm font-bold text-primary">Neurosound</span>
+<span class="font-label-md text-label-md text-on-surface-variant">Clinical Portal</span>
+</div>
+</div>
+<nav class="flex-1 mt-lg px-md space-y-base">
+<a class="flex items-center gap-md p-md rounded-lg transition-colors hover:bg-surface-container-low text-on-surface-variant" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span class="font-label-md text-label-md">Dashboard</span>
+</a>
+<a class="flex items-center gap-md p-md rounded-lg text-primary bg-surface-container-high border-r-4 border-primary font-bold" href="#">
+<span class="material-symbols-outlined" data-icon="medical_services">medical_services</span>
+<span class="font-label-md text-label-md">Start Scan</span>
+</a>
+<a class="flex items-center gap-md p-md rounded-lg transition-colors hover:bg-surface-container-low text-on-surface-variant" href="#">
+<span class="material-symbols-outlined" data-icon="history">history</span>
+<span class="font-label-md text-label-md">History</span>
+</a>
+<a class="flex items-center gap-md p-md rounded-lg transition-colors hover:bg-surface-container-low text-on-surface-variant" href="#">
+<span class="material-symbols-outlined" data-icon="settings_remote">settings_remote</span>
+<span class="font-label-md text-label-md">Device Status</span>
+</a>
+<a class="flex items-center gap-md p-md rounded-lg transition-colors hover:bg-surface-container-low text-on-surface-variant" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="font-label-md text-label-md">Settings</span>
+</a>
+</nav>
+<div class="p-lg border-t border-outline-variant">
+<div class="flex items-center gap-md">
+<img alt="Clinician Profile" class="w-10 h-10 rounded-full object-cover border border-outline-variant" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBGnQwLHDWStQ40bjawrjwU1kDbOdDqEU6WMYtwGmBQdGj0uoFfTIzQymfu_pZa4SZuDsy5jMZD1nkBLNa-eja6_4kaWCCragKJfHCVrvGRsXJyUni1QtjxkoguGEVpwLhdBeBsgdrMa-0k4xOVdW6qKhjw7SVNBcrUfMHpiX3pg4neRbh5kzDaF87B_epu-4F0k7ZcALPH3fohXuuv_qn87StKZ-_McrjAJA7osZsgrIaakLrY_wc1BDVGEUZZu8Yvb519E9O7STwi"/>
+<div class="flex flex-col">
+<span class="font-label-md text-label-md">Dr. Sarah Miller</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Neurologist</span>
+</div>
+</div>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="flex-1 flex flex-col overflow-y-auto">
+<!-- TopNavBar -->
+<header class="flex justify-between items-center w-full px-margin-mobile md:px-margin-desktop h-16 sticky top-0 z-50 bg-surface border-b border-outline-variant">
+<div class="flex items-center gap-lg">
+<span class="lg:hidden material-symbols-outlined text-primary cursor-pointer" data-icon="menu">menu</span>
+<div class="hidden md:flex bg-surface-container-low px-md py-sm rounded-full items-center gap-sm">
+<span class="material-symbols-outlined text-on-surface-variant" data-icon="search">search</span>
+<input class="bg-transparent border-none focus:ring-0 font-body-sm text-body-sm w-48" placeholder="Search patients..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-lg">
+<div class="hidden sm:flex items-center gap-sm bg-secondary-container text-on-secondary-container px-md py-sm rounded-full font-label-md">
+<span class="material-symbols-outlined" data-icon="fingerprint" style="font-size: 18px;">fingerprint</span>
+                    Patient ID: 882-941
+                </div>
+<div class="flex items-center gap-md">
+<span class="material-symbols-outlined text-on-surface-variant cursor-pointer transition-opacity active:opacity-70" data-icon="notifications">notifications</span>
+<span class="material-symbols-outlined text-on-surface-variant cursor-pointer transition-opacity active:opacity-70" data-icon="account_circle">account_circle</span>
+</div>
+</div>
+</header>
+<div class="p-margin-mobile md:p-margin-desktop space-y-xl">
+<!-- Primary Finding Header (New simplified summary section) -->
+<section class="space-y-md">
+<div class="flex flex-col md:flex-row md:items-end justify-between gap-md border-b border-outline-variant pb-lg">
+<div>
+<span class="font-label-md text-label-md text-secondary uppercase tracking-widest font-bold">Diagnostic Result</span>
+<h1 class="text-[48px] md:text-[64px] font-extrabold text-on-surface leading-tight">NORMAL</h1>
+<p class="font-body-lg text-body-lg text-on-surface-variant max-w-2xl">Response detected bilaterally. ABR waveforms demonstrate clear morphology and latencies within expected clinical ranges for age and gender.</p>
+</div>
+<div class="flex gap-md">
+<button class="px-xl py-md bg-primary text-on-primary font-label-md rounded-lg flex items-center justify-center gap-sm transition-transform active:scale-95">
+<span class="material-symbols-outlined" data-icon="picture_as_pdf">picture_as_pdf</span>
+                            Export Report
+                        </button>
+</div>
+</div>
+</section>
+<!-- Tabbed Layout -->
+<div class="space-y-lg">
+<div class="flex gap-lg border-b border-outline-variant overflow-x-auto no-scrollbar">
+<button class="pb-md px-base font-label-md text-primary border-b-4 border-primary transition-all font-bold" id="tab-summary" onclick="switchTab('summary')">Visual Analysis</button>
+<button class="pb-md px-base font-label-md text-on-surface-variant hover:text-primary transition-all" id="tab-advanced" onclick="switchTab('advanced')">Detailed Metrics</button>
+</div>
+<!-- Visual Analysis View -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-lg" id="view-summary">
+<!-- Waveform Card -->
+<div class="lg:col-span-8 bg-surface-container-lowest border border-outline-variant rounded-2xl p-lg overflow-hidden">
+<div class="flex justify-between items-center mb-lg">
+<h3 class="font-headline-md text-headline-md text-primary font-bold">ABR Waveforms</h3>
+<div class="flex items-center gap-xl">
+<div class="flex items-center gap-sm">
+<span class="w-4 h-4 rounded-full bg-secondary"></span>
+<span class="font-label-md text-label-md">Left Ear (31.1/s)</span>
+</div>
+<div class="flex items-center gap-sm">
+<span class="w-4 h-4 rounded-full bg-primary-container opacity-40"></span>
+<span class="font-label-md text-label-md">Right Ear (31.1/s)</span>
+</div>
+</div>
+</div>
+<!-- SVG Waveform -->
+<div class="w-full h-80 bg-surface-container-low rounded-xl relative flex items-center justify-center overflow-hidden border border-outline-variant">
+<svg class="w-full h-full p-lg" viewbox="0 0 1000 200">
+<line stroke="#c3c7cd" stroke-dasharray="4" x1="0" x2="1000" y1="100" y2="100"></line>
+<line stroke="#c3c7cd" stroke-dasharray="4" x1="200" x2="200" y1="0" y2="200"></line>
+<line stroke="#c3c7cd" stroke-dasharray="4" x1="400" x2="400" y1="0" y2="200"></line>
+<line stroke="#c3c7cd" stroke-dasharray="4" x1="600" x2="600" y1="0" y2="200"></line>
+<line stroke="#c3c7cd" stroke-dasharray="4" x1="800" x2="800" y1="0" y2="200"></line>
+<path class="waveform-path" d="M0,100 L100,100 L120,70 L140,110 L160,85 L200,100 L250,50 L300,130 L350,20 L400,150 L500,80 L600,100 L700,90 L800,110 L1000,100" fill="none" stroke="#366850" stroke-linecap="round" stroke-width="3"></path>
+<path class="waveform-path opacity-40" d="M0,105 L100,105 L125,80 L145,120 L165,95 L205,105 L255,60 L305,140 L355,30 L405,160 L505,90 L605,105 L705,95 L805,115 L1000,105" fill="none" stroke="#032034" stroke-linecap="round" stroke-width="2"></path>
+<text fill="#366850" font-family="Inter" font-size="14" font-weight="bold" x="120" y="60">I</text>
+<text fill="#366850" font-family="Inter" font-size="14" font-weight="bold" x="250" y="40">III</text>
+<text fill="#366850" font-family="Inter" font-size="14" font-weight="bold" x="350" y="15">V</text>
+</svg>
+<div class="absolute bottom-md right-md flex gap-sm">
+<button class="p-sm bg-surface-container-highest rounded-lg hover:bg-outline-variant transition-colors border border-outline-variant">
+<span class="material-symbols-outlined" data-icon="zoom_in" style="font-size: 20px;">zoom_in</span>
+</button>
+<button class="p-sm bg-surface-container-highest rounded-lg hover:bg-outline-variant transition-colors border border-outline-variant">
+<span class="material-symbols-outlined" data-icon="fullscreen" style="font-size: 20px;">fullscreen</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Side Insights -->
+<div class="lg:col-span-4 space-y-lg">
+<div class="bg-primary text-on-primary rounded-2xl p-lg shadow-lg">
+<h4 class="font-label-md text-label-md opacity-80 uppercase tracking-widest mb-lg">Key Indicators</h4>
+<div class="space-y-lg">
+<div>
+<p class="font-body-sm opacity-70">Wave V Latency</p>
+<p class="text-[32px] font-bold">5.64 ms</p>
+</div>
+<div class="border-t border-white/10 pt-md">
+<p class="font-body-sm opacity-70">Threshold</p>
+<p class="text-[32px] font-bold">20 dB nHL</p>
+</div>
+</div>
+</div>
+<div class="bg-surface-container border border-outline-variant rounded-2xl p-lg">
+<h4 class="font-label-md text-label-md text-on-surface-variant uppercase tracking-widest mb-md">Clinical Notes</h4>
+<p class="font-body-md text-on-surface leading-relaxed italic">
+                                "Tympanometry Type A bilaterally. Infant remained in quiet sleep for the duration of the scan. Signal quality excellent with minimal artifact rejection."
+                            </p>
+</div>
+</div>
+</div>
+<!-- Detailed Metrics View (Advanced) -->
+<div class="hidden space-y-lg" id="view-advanced">
+<div class="bg-surface-container-lowest border border-outline-variant rounded-2xl overflow-hidden shadow-sm">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="bg-surface-container-high font-label-md text-label-md text-on-surface-variant">
+<th class="p-lg border-b border-outline-variant">Component</th>
+<th class="p-lg border-b border-outline-variant">Latency (ms)</th>
+<th class="p-lg border-b border-outline-variant">Amplitude (µV)</th>
+<th class="p-lg border-b border-outline-variant">Status</th>
+</tr>
+</thead>
+<tbody class="font-body-md text-body-md">
+<tr class="hover:bg-surface-container-low transition-colors">
+<td class="p-lg border-b border-outline-variant font-bold">Wave I</td>
+<td class="p-lg border-b border-outline-variant">1.62</td>
+<td class="p-lg border-b border-outline-variant">0.24</td>
+<td class="p-lg border-b border-outline-variant">
+<div class="flex items-center gap-sm">
+<span class="w-2 h-2 rounded-full bg-secondary"></span>
+<span class="text-secondary font-bold">Normal</span>
+</div>
+</td>
+</tr>
+<tr class="hover:bg-surface-container-low transition-colors">
+<td class="p-lg border-b border-outline-variant font-bold">Wave III</td>
+<td class="p-lg border-b border-outline-variant">3.78</td>
+<td class="p-lg border-b border-outline-variant">0.38</td>
+<td class="p-lg border-b border-outline-variant">
+<div class="flex items-center gap-sm">
+<span class="w-2 h-2 rounded-full bg-secondary"></span>
+<span class="text-secondary font-bold">Normal</span>
+</div>
+</td>
+</tr>
+<tr class="hover:bg-surface-container-low transition-colors">
+<td class="p-lg border-b border-outline-variant font-bold">Wave V</td>
+<td class="p-lg border-b border-outline-variant">5.64</td>
+<td class="p-lg border-b border-outline-variant">0.52</td>
+<td class="p-lg border-b border-outline-variant">
+<div class="flex items-center gap-sm">
+<span class="w-2 h-2 rounded-full bg-secondary"></span>
+<span class="text-secondary font-bold">Normal</span>
+</div>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-lg">
+<div class="bg-surface-container-low border border-outline-variant rounded-2xl p-lg">
+<h4 class="font-headline-sm text-headline-sm text-primary font-bold mb-lg">Scan Parameters</h4>
+<div class="grid grid-cols-2 gap-xl">
+<div>
+<p class="font-label-sm text-label-sm text-on-surface-variant uppercase">Stimulus</p>
+<p class="font-body-md text-body-md font-medium">Click 100μs</p>
+</div>
+<div>
+<p class="font-label-sm text-label-sm text-on-surface-variant uppercase">Rate</p>
+<p class="font-body-md text-body-md font-medium">31.1 / sec</p>
+</div>
+<div>
+<p class="font-label-sm text-label-sm text-on-surface-variant uppercase">Polarity</p>
+<p class="font-body-md text-body-md font-medium">Rarefaction</p>
+</div>
+<div>
+<p class="font-label-sm text-label-sm text-on-surface-variant uppercase">Filter</p>
+<p class="font-body-md text-body-md font-medium">100-3kHz</p>
+</div>
+</div>
+</div>
+<div class="bg-surface-container-low border border-outline-variant rounded-2xl p-lg">
+<h4 class="font-headline-sm text-headline-sm text-primary font-bold mb-lg">Signal Integrity</h4>
+<div class="space-y-md">
+<div class="flex justify-between items-center">
+<span class="font-body-sm text-on-surface-variant">Sweep Completion</span>
+<span class="font-body-md font-bold text-secondary">93.1%</span>
+</div>
+<div class="w-full bg-surface-container-highest rounded-full h-3">
+<div class="bg-secondary h-3 rounded-full" style="width: 93%;"></div>
+</div>
+<p class="text-label-sm text-on-surface-variant mt-sm">2048 Sweeps, 142 Rejected. SNR 4.2:1 (Ideal)</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Footer -->
+<footer class="w-full py-6 px-margin-mobile md:px-margin-desktop flex flex-col md:flex-row justify-between items-center bg-surface border-t border-outline-variant mt-auto">
+<span class="font-label-sm text-label-sm text-on-surface-variant">© 2024 Neurosound Medical Systems. Clinical Diagnostic Support.</span>
+<div class="flex gap-lg mt-md md:mt-0">
+<a class="font-label-sm text-label-sm text-on-surface-variant hover:text-primary transition-colors underline underline-offset-4" href="#">Support</a>
+<a class="font-label-sm text-label-sm text-on-surface-variant hover:text-primary transition-colors underline underline-offset-4" href="#">Compliance</a>
+<a class="font-label-sm text-label-sm text-on-surface-variant hover:text-primary transition-colors underline underline-offset-4" href="#">Logout</a>
+</div>
+</footer>
+</main>
+<!-- BottomNavBar (Mobile) -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 py-2 bg-surface border-t border-outline-variant lg:hidden shadow-lg">
+<div class="flex flex-col items-center justify-center text-on-surface-variant p-2">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span class="font-label-sm text-label-sm">Home</span>
+</div>
+<div class="flex flex-col items-center justify-center bg-primary text-on-primary rounded-2xl p-3 shadow-lg -translate-y-4">
+<span class="material-symbols-outlined" data-icon="medical_services">medical_services</span>
+</div>
+<div class="flex flex-col items-center justify-center text-on-surface-variant p-2">
+<span class="material-symbols-outlined" data-icon="history">history</span>
+<span class="font-label-sm text-label-sm">History</span>
+</div>
+</nav>
+</div>
+<script>
+    function switchTab(view) {
+        const summaryTab = document.getElementById('tab-summary');
+        const advancedTab = document.getElementById('tab-advanced');
+        const summaryView = document.getElementById('view-summary');
+        const advancedView = document.getElementById('view-advanced');
+
+        if (view === 'summary') {
+            summaryTab.classList.add('text-primary', 'border-primary', 'border-b-4', 'font-bold');
+            summaryTab.classList.remove('text-on-surface-variant');
+            advancedTab.classList.add('text-on-surface-variant');
+            advancedTab.classList.remove('text-primary', 'border-primary', 'border-b-4', 'font-bold');
+            
+            summaryView.classList.remove('hidden');
+            advancedView.classList.add('hidden');
+        } else {
+            advancedTab.classList.add('text-primary', 'border-primary', 'border-b-4', 'font-bold');
+            advancedTab.classList.remove('text-on-surface-variant');
+            summaryTab.classList.add('text-on-surface-variant');
+            summaryTab.classList.remove('text-primary', 'border-primary', 'border-b-4', 'font-bold');
+            
+            advancedView.classList.remove('hidden');
+            summaryView.classList.add('hidden');
+        }
+    }
+</script>
+</body></html>

@@ -5,6 +5,11 @@ import (
 	"capstone/internal/abr"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	fiberws "github.com/gofiber/contrib/websocket"
@@ -75,6 +80,11 @@ func (s *Server) registerRoutes() {
 	v1.Post("/abr/save", s.handleABRSave)
 	v1.Post("/stim", s.handleStimTrigger)
 	v1.Post("/stim/set", s.handleStimSet)
+	v1.Post("/reset", s.handleReset)
+
+	// Sessions — list & retrieve saved EEG files
+	v1.Get("/sessions", s.handleListSessions)
+	v1.Get("/sessions/:filename", s.handleGetSession)
 }
 
 // ── Handlers ──────────────────────────────────────────────────
@@ -151,6 +161,69 @@ func (s *Server) handleStimSet(c *fiber.Ctx) error {
 	})
 	s.hub.Broadcast(string(payload))
 	return c.JSON(fiber.Map{"ok": true, "db": body.DB})
+}
+
+func (s *Server) handleReset(c *fiber.Ctx) error {
+	s.proc.Reset()
+	return c.JSON(fiber.Map{"ok": true, "msg": "ABR processor reset"})
+}
+
+// SessionMeta adalah metadata satu file sesi yang disimpan.
+type SessionMeta struct {
+	Filename   string    `json:"filename"`
+	SavedAt    time.Time `json:"saved_at"`
+	TrialCount int       `json:"trial_count"`
+}
+
+// handleListSessions mengembalikan daftar semua file eeg_abr_*.json.
+func (s *Server) handleListSessions(c *fiber.Ctx) error {
+	matches, err := filepath.Glob("eeg_abr_*.json")
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	sessions := make([]SessionMeta, 0, len(matches))
+	for _, path := range matches {
+		meta := SessionMeta{Filename: filepath.Base(path)}
+
+		// Ambil timestamp dari nama file: eeg_abr_{unix}.json
+		base := strings.TrimPrefix(strings.TrimSuffix(meta.Filename, ".json"), "eeg_abr_")
+		if ts, err := strconv.ParseInt(base, 10, 64); err == nil {
+			meta.SavedAt = time.Unix(ts, 0)
+		}
+
+		// Baca trial_count dari isi file
+		if data, err := os.ReadFile(path); err == nil {
+			var raw struct {
+				TrialCount int `json:"trial_count"`
+			}
+			if json.Unmarshal(data, &raw) == nil {
+				meta.TrialCount = raw.TrialCount
+			}
+		}
+		sessions = append(sessions, meta)
+	}
+
+	// Urutkan terbaru dahulu
+	sort.Slice(sessions, func(i, j int) bool {
+		return sessions[i].SavedAt.After(sessions[j].SavedAt)
+	})
+
+	return c.JSON(fiber.Map{"sessions": sessions, "total": len(sessions)})
+}
+
+// handleGetSession mengembalikan isi lengkap satu file sesi.
+func (s *Server) handleGetSession(c *fiber.Ctx) error {
+	filename := filepath.Base(c.Params("filename")) // sanitize path traversal
+	if !strings.HasPrefix(filename, "eeg_abr_") || !strings.HasSuffix(filename, ".json") {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid filename"})
+	}
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "session not found"})
+	}
+	c.Set("Content-Type", "application/json")
+	return c.Send(data)
 }
 
 func (s *Server) handleRawStream(c *fiber.Ctx) error {

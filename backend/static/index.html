@@ -110,6 +110,12 @@
     <span class="stat-label">Raw samples</span>
     <span class="stat-value" id="st-rawsamp">—</span>
   </div>
+  <div class="stat" style="margin-left:auto">
+    <button id="btn-reset" onclick="resetAll()"
+      style="background:#1a0d0d;border-color:#ff4444;color:#ff4444;padding:6px 16px;font-size:0.8rem">
+      ⟳ Reset
+    </button>
+  </div>
 </div>
 
 <!-- Tab bar -->
@@ -239,7 +245,17 @@ function buildABRCharts(nSamples, epochMs) {
 function updateABRCharts(result) {
   const abr = result.abr_average;
   const nSamples = abr && abr[0] ? abr[0].length : 0;
-  if (!nSamples) return;
+  if (!nSamples) {
+    // Belum ada data — update status bar saja
+    document.getElementById('st-trials').textContent = result.trial_count ?? '0';
+    const qEl = document.getElementById('st-quality');
+    qEl.textContent = result.quality ?? 'Menunggu data…';
+    qEl.className = 'stat-value bad';
+    document.getElementById('st-epoch').textContent = result.epoch_ms != null ? `${result.epoch_ms} ms` : '—';
+    document.getElementById('st-fs').textContent = result.sampling_rate != null ? `${result.sampling_rate} Hz` : '—';
+    document.getElementById('log').textContent = `⏳ ABR: menunggu frame EEG dari ESP32… (trials=${result.trial_count ?? 0})`;
+    return;
+  }
 
   if (abrCharts.length === 0 || abrCharts[0].chart.data.labels.length !== nSamples) {
     buildABRCharts(nSamples, result.epoch_ms);
@@ -310,7 +326,11 @@ function buildRawCharts(nSamples, windowMs) {
 
 function updateRawCharts(result) {
   const samples = result.samples;
-  if (!samples || !samples[0]) return;
+  if (!samples || !samples[0] || samples[0].length === 0) {
+    document.getElementById('st-rawsamp').textContent = '0';
+    document.getElementById('log').textContent = `⏳ Raw: menunggu frame EEG… (${new Date().toLocaleTimeString()})`;
+    return;
+  }
 
   const chList = rawSingleCh !== null ? [rawSingleCh] : Array.from({length: N_CH}, (_,i) => i);
   const nSamples = samples[chList[0]] ? samples[chList[0]].length : 0;
@@ -397,6 +417,43 @@ function setSingleChannel(val) {
 function setRawChannel(val) {
   rawSingleCh = val === '' ? null : parseInt(val);
   rawCharts = [];
+}
+
+// ─── Reset ───────────────────────────────────────────────────
+async function resetAll() {
+  const btn = document.getElementById('btn-reset');
+  btn.textContent = '…';
+  btn.disabled = true;
+
+  try {
+    await fetch(`${BASE}/api/v1/reset`, { method: 'POST' });
+  } catch (e) {
+    console.warn('reset error', e);
+  }
+
+  // Hapus semua chart dari DOM
+  abrCharts.forEach(({ chart }) => chart.destroy());
+  rawCharts.forEach(({ chart }) => chart.destroy());
+  abrCharts = [];
+  rawCharts = [];
+  document.getElementById('abr-grid').innerHTML = '';
+  document.getElementById('raw-grid').innerHTML  = '';
+
+  // Reset status bar
+  document.getElementById('st-trials').textContent  = '0';
+  document.getElementById('st-quality').textContent = '—';
+  document.getElementById('st-quality').className   = 'stat-value';
+  document.getElementById('st-epoch').textContent   = '—';
+  document.getElementById('st-fs').textContent      = '—';
+  document.getElementById('st-rawsamp').textContent = '—';
+  document.getElementById('log').textContent = `⟳ Reset pada ${new Date().toLocaleTimeString()}`;
+
+  // Reconnect stream supaya langsung dapat data segar
+  if (abrStreaming) startABRStream();
+  if (rawStreaming) startRawStream();
+
+  btn.textContent = '⟳ Reset';
+  btn.disabled = false;
 }
 
 // ─── Boot ─────────────────────────────────────────────────────

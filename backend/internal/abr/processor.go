@@ -339,6 +339,29 @@ func (p *Processor) RecentSamples(windowMs float64) RawResult {
 	}
 }
 
+// Reset menghapus semua data accumulated — trial, epoch, buffer, stimLog.
+func (p *Processor) Reset() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for i := range p.buf {
+		p.buf[i] = [nChannels]float64{}
+		p.bufTimes[i] = time.Time{}
+	}
+	p.bufHead = 0
+	p.bufFull = false
+	p.stimLog = nil
+	p.processedStim = make(map[int]bool)
+	for ch := 0; ch < nChannels; ch++ {
+		p.epochs[ch] = nil
+		for i := range p.abrAvg[ch] {
+			p.abrAvg[ch][i] = 0
+		}
+	}
+	p.trialCount = 0
+	p.snapshots = nil
+	p.lastSnapshot = 0
+}
+
 func (p *Processor) Snapshots() []Snapshot {
 	p.mu.RLock()
 	defer p.mu.RUnlock()

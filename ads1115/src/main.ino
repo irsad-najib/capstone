@@ -9,7 +9,7 @@
 #include <math.h>
 
 // ─── User config ────────────────────────────────────────────────────────────
-#define WS_HOST          "10.106.14.216"
+#define WS_HOST          "10.57.242.35"
 #define WS_PORT          8080
 #define DEVICE_ID        "esp32-abr-001"
 
@@ -465,21 +465,27 @@ void loop() {
         stimCount++;
     }
 
-    // Drain ring buffer → WS send
+    // Drain ring buffer → WS send (batch up to 8 samples per message)
+    #define WS_BATCH 8
     while (bufTail != bufHead) {
-        lastRaw      = ringBuf[bufTail];
-        bufTail      = (bufTail + 1) % BUF_SIZE;
-        hasNewSample = true;
-
-        if (wsConnected) {
-            static char jsonBuf[64];
+        static char jsonBuf[256];
+        int pos = 0;
+        pos += snprintf(jsonBuf + pos, sizeof(jsonBuf) - pos, "[");
+        int count = 0;
+        while (bufTail != bufHead && count < WS_BATCH) {
+            lastRaw  = ringBuf[bufTail];
+            bufTail  = (bufTail + 1) % BUF_SIZE;
+            hasNewSample = true;
             int s = stimPending ? 1 : 0;
-            snprintf(jsonBuf, sizeof(jsonBuf),
-                     "{\"t\":%lu,\"r\":%d,\"s\":%d}",
-                     (unsigned long)millis(), lastRaw, s);
-            wsClient.sendTXT(jsonBuf);
             if (stimPending) stimPending = false;
+            pos += snprintf(jsonBuf + pos, sizeof(jsonBuf) - pos,
+                            "%s{\"t\":%lu,\"r\":%d,\"s\":%d}",
+                            count ? "," : "",
+                            (unsigned long)millis(), lastRaw, s);
+            count++;
         }
+        snprintf(jsonBuf + pos, sizeof(jsonBuf) - pos, "]");
+        if (wsConnected) wsClient.sendTXT(jsonBuf);
     }
 
     // Throttled serial data print

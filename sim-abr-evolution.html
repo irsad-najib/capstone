@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Evolusi ABR — N = 1, 10, 50, 100, 500, 1000 Trial</title>
+<style>
+:root{--bg:#0d1117;--panel:#161b22;--border:#30363d;--text:#e6edf3;--muted:#8b949e;--accent:#58a6ff;--green:#3fb950;--yellow:#d29922;--red:#f85149;--orange:#ffa657;--purple:#bc8cff;--mono:'Courier New',monospace}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px;padding:16px}
+.header{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+.header h1{font-size:15px;font-weight:700}
+.badge{padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600}
+.badge-blue{background:rgba(88,166,255,.15);color:var(--accent);border:1px solid rgba(88,166,255,.3)}
+.badge-green{background:rgba(63,185,80,.2);color:var(--green);border:1px solid rgba(63,185,80,.4)}
+.badge-orange{background:rgba(255,166,87,.15);color:var(--orange);border:1px solid rgba(255,166,87,.3)}
+.badge-purple{background:rgba(188,140,255,.15);color:var(--purple);border:1px solid rgba(188,140,255,.3)}
+.controls{display:flex;gap:10px;flex-wrap:wrap;padding:10px 14px;background:var(--panel);border:1px solid var(--border);border-radius:8px;margin-bottom:12px;align-items:center}
+.ctrl-group{display:flex;gap:6px;align-items:center}
+label{color:var(--muted);font-size:11px;white-space:nowrap}
+select{padding:4px 8px;background:#21262d;border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;cursor:pointer}
+button{padding:5px 16px;border-radius:6px;border:1px solid var(--border);background:#21262d;color:var(--text);font-size:12px;cursor:pointer;font-weight:600}
+button:hover{background:#30363d}
+button.primary{background:rgba(88,166,255,.15);border-color:var(--accent);color:var(--accent)}
+button.running{background:rgba(63,185,80,.15);border-color:var(--green);color:var(--green)}
+button.stop{background:rgba(248,81,73,.12);border-color:var(--red);color:var(--red)}
+.progress-bar{height:4px;background:var(--border);border-radius:2px;overflow:hidden;margin-bottom:12px}
+.progress-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--purple));border-radius:2px;transition:width .3s}
+.grid6{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px}
+@media(max-width:800px){.grid6{grid-template-columns:repeat(2,1fr)}}
+.wave-card{background:var(--panel);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.wc-header{padding:6px 10px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:rgba(255,255,255,.02)}
+.wc-title{font-weight:700;font-size:12px}
+.wc-info{font-size:10px;font-family:var(--mono)}
+canvas.wc{display:block;width:100%;background:#0a0e14}
+.summary-panel{background:var(--panel);border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:10px}
+.sp-header{padding:7px 14px;border-bottom:1px solid var(--border);font-weight:700;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+canvas.full{display:block;width:100%;background:#0a0e14}
+.insight-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px}
+.insight-card{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:10px 14px}
+.ins-label{font-size:10px;color:var(--muted);text-transform:uppercase;margin-bottom:4px}
+.ins-value{font-family:var(--mono);font-size:14px;font-weight:700}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>🧠 Evolusi Bentuk Gelombang ABR — Running Average N Trial</h1>
+  <span class="badge badge-blue">ADS1115 @ 860 SPS</span>
+  <span class="badge badge-orange">Epoch 50ms</span>
+  <span class="badge badge-purple">SNR ∝ √N (teori)</span>
+</div>
+
+<div class="controls">
+  <div class="ctrl-group">
+    <label>dB Level</label>
+    <select id="selDb">
+      <option value="60">60 dB</option>
+      <option value="70">70 dB</option>
+      <option value="80" selected>80 dB</option>
+      <option value="90">90 dB</option>
+    </select>
+  </div>
+  <div class="ctrl-group">
+    <label>Noise Level</label>
+    <select id="selNoise">
+      <option value="0.5">Rendah</option>
+      <option value="1.0" selected>Sedang</option>
+      <option value="2.0">Tinggi</option>
+    </select>
+  </div>
+  <div class="ctrl-group">
+    <label>Sample Rate</label>
+    <select id="selFs">
+      <option value="860" selected>860 SPS (ADS1115)</option>
+      <option value="500">500 SPS (ADS1299)</option>
+    </select>
+  </div>
+  <div class="ctrl-group" style="margin-left:auto">
+    <button id="btnRun" class="primary">▶ Jalankan Simulasi</button>
+    <button id="btnReset">🔄 Reset</button>
+  </div>
+</div>
+
+<!-- Progress -->
+<div class="progress-bar"><div class="progress-fill" id="progFill" style="width:0%"></div></div>
+
+<!-- 6 wave cards -->
+<div class="grid6" id="grid6"></div>
+
+<!-- Full overlay comparison -->
+<div class="summary-panel">
+  <div class="sp-header">📊 Perbandingan Semua Trial — Overlay &amp; SNR Progression</div>
+  <canvas class="full" id="cOverlay" height="200"></canvas>
+</div>
+
+<div class="insight-grid" id="insightGrid" style="margin-bottom:12px"></div>
+
+<script>
+const TRIAL_MILESTONES = [1, 10, 50, 100, 500, 1000];
+const CARD_COLORS = ['#f85149','#ffa657','#d29922','#3fb950','#58a6ff','#bc8cff'];
+const FS_DEFAULT = 860;
+const EPOCH_MS   = 50;
+
+let snapshots = {}; // keyed by trial milestone
+let snrByTrial = [];
+
+// ── Signal generator ─────────────────────────────────────────
+function generateEpochs(nTrials, fs, dbScale, noiseScale) {
+  const epochSamples = Math.round(fs * EPOCH_MS / 1000);
+  const abrWaves = [
+    {d:4,  a:0.18*dbScale, w:1.8},
+    {d:12, a:0.12*dbScale, w:2.5},
+    {d:20, a:0.28*dbScale, w:3.5},
+    {d:28, a:0.08*dbScale, w:2.5},
+  ];
+
+  const avg = new Float64Array(epochSamples);
+  const snrs = [];
+  const snaps = {};
+
+  for (let trial = 1; trial <= nTrials; trial++) {
+    // Generate one epoch
+    const ep = new Float64Array(epochSamples);
+    let noise = 0;
+    for (let i = 0; i < epochSamples; i++) {
+      noise += (Math.random() - 0.5) * 0.04 * noiseScale;
+      noise *= 0.985;
+      const plf   = Math.sin(2*Math.PI * 50 * i / fs) * 0.012 * noiseScale;
+      const pol   = trial % 2 === 0 ? 1 : -1;
+      let abr = 0;
+      for (const w of abrWaves) {
+        const dt = i - w.d;
+        abr += pol * w.a * Math.exp(-dt*dt / (2*w.w*w.w));
+      }
+      ep[i] = noise + plf + abr;
+    }
+    // Running average
+    for (let i = 0; i < epochSamples; i++) {
+      avg[i] = (avg[i] * (trial-1) + ep[i]) / trial;
+    }
+    // SNR estimate
+    let sig = 0, noisePow = 0;
+    for (let i = 3; i < 28 && i < epochSamples; i++) sig = Math.max(sig, Math.abs(avg[i]));
+    for (let i = 0; i < 3 && i < epochSamples; i++) noisePow += avg[i]*avg[i];
+    const noiseRMS = Math.sqrt(noisePow / 3);
+    const snr = noiseRMS > 0 ? 20*Math.log10(sig/noiseRMS) : 0;
+    snrs.push({ trial, snr });
+
+    if (TRIAL_MILESTONES.includes(trial)) {
+      snaps[trial] = { avg: Float64Array.from(avg), snr };
+    }
+  }
+  return { snaps, snrs, epochSamples };
+}
+
+// ── Canvas helper ─────────────────────────────────────────────
+function setupCanvas(id) {
+  const c = document.getElementById(id);
+  const dpr = window.devicePixelRatio || 1;
+  c.width = c.offsetWidth * dpr;
+  c.height = c.offsetHeight * dpr;
+  const ctx = c.getContext('2d');
+  ctx.scale(dpr, dpr);
+  return { ctx, W: c.offsetWidth, H: c.offsetHeight };
+}
+
+function setupCanvasEl(el) {
+  const dpr = window.devicePixelRatio || 1;
+  el.width = el.offsetWidth * dpr;
+  el.height = el.offsetHeight * dpr;
+  const ctx = el.getContext('2d');
+  ctx.scale(dpr, dpr);
+  return { ctx, W: el.offsetWidth, H: el.offsetHeight };
+}
+
+// ── Draw single wave card ─────────────────────────────────────
+function drawWaveCard(canvasEl, avg, epochSamples, color, trial, snr) {
+  const { ctx, W, H } = setupCanvasEl(canvasEl);
+  ctx.clearRect(0, 0, W, H);
+  const PAD = { l: 36, r: 8, t: 10, b: 22 };
+  const PW = W - PAD.l - PAD.r, PH = H - PAD.t - PAD.b;
+
+  // Scale: find max abs value in signal for auto-scale
+  let maxV = 0;
+  for (let i = 0; i < epochSamples; i++) maxV = Math.max(maxV, Math.abs(avg[i]));
+  if (maxV === 0) maxV = 0.5;
+  const SCALE = maxV * 1.3;
+  const mid = PAD.t + PH / 2;
+
+  // Grid
+  ctx.strokeStyle = '#1c2430'; ctx.lineWidth = 1;
+  [-SCALE, 0, SCALE].forEach(v => {
+    const y = mid - (v/SCALE)*PH/2;
+    ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(W-PAD.r, y); ctx.stroke();
+    ctx.fillStyle='#8b949e'; ctx.font='9px Courier New'; ctx.textAlign='right';
+    ctx.fillText((v>0?'+':v<0?'':'')+v.toFixed(2), PAD.l-2, y+3);
+  });
+  [0, EPOCH_MS/2, EPOCH_MS].forEach(ms => {
+    const x = PAD.l + PW * ms / EPOCH_MS;
+    ctx.beginPath(); ctx.moveTo(x, PAD.t); ctx.lineTo(x, H-PAD.b); ctx.stroke();
+    ctx.fillStyle='#8b949e'; ctx.font='9px Courier New'; ctx.textAlign='center';
+    ctx.fillText(ms+'ms', x, H-PAD.b+12);
+  });
+
+  // Shaded area under curve
+  ctx.fillStyle = color + '18';
+  ctx.beginPath();
+  ctx.moveTo(PAD.l, mid);
+  for (let i = 0; i < epochSamples; i++) {
+    const x = PAD.l + PW * i / epochSamples;
+    const y = mid - (avg[i]/SCALE)*PH/2;
+    ctx.lineTo(x, Math.max(PAD.t, Math.min(PAD.t+PH, y)));
+  }
+  ctx.lineTo(PAD.l + PW, mid);
+  ctx.closePath(); ctx.fill();
+
+  // Waveform
+  ctx.strokeStyle = color; ctx.lineWidth = 2;
+  ctx.beginPath();
+  let first = true;
+  for (let i = 0; i < epochSamples; i++) {
+    const x = PAD.l + PW * i / epochSamples;
+    const y = Math.max(PAD.t, Math.min(PAD.t+PH, mid - (avg[i]/SCALE)*PH/2));
+    first ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    first = false;
+  }
+  ctx.stroke();
+
+  // Wave labels (I, III, V) — approximate positions
+  const wMs = [4/860*1000, 12/860*1000, 20/860*1000];
+  const wN  = ['I','III','V'];
+  ctx.fillStyle = color + 'bb'; ctx.font = 'bold 9px Courier New'; ctx.textAlign = 'center';
+  wMs.forEach((ms, wi) => {
+    const x = PAD.l + PW * ms / EPOCH_MS;
+    if (x < W-PAD.r) ctx.fillText(wN[wi], x, PAD.t + 10);
+  });
+
+  // Zero line
+  ctx.strokeStyle='rgba(139,148,158,0.3)'; ctx.lineWidth=1; ctx.setLineDash([3,4]);
+  ctx.beginPath(); ctx.moveTo(PAD.l, mid); ctx.lineTo(W-PAD.r, mid); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // SNR badge
+  ctx.fillStyle = 'rgba(13,17,23,0.8)'; ctx.fillRect(W-PAD.r-68, PAD.t+2, 64, 18);
+  ctx.fillStyle = color; ctx.font = 'bold 9.5px Courier New'; ctx.textAlign = 'center';
+  ctx.fillText(`SNR ${snr.toFixed(1)}dB`, W-PAD.r-36, PAD.t+13);
+}
+
+// ── Draw overlay comparison ───────────────────────────────────
+function drawOverlay(epochSamples) {
+  const { ctx, W, H } = setupCanvas('cOverlay');
+  ctx.clearRect(0, 0, W, H);
+  const PAD = { l: 50, r: 20, t: 16, b: 28 };
+  const PW = W - PAD.l - PAD.r, PH = H - PAD.t - PAD.b;
+  const SCALE = 0.35;
+  const mid = PAD.t + PH / 2;
+
+  // Grid
+  ctx.strokeStyle = '#1c2430'; ctx.lineWidth = 1;
+  [-SCALE, -SCALE/2, 0, SCALE/2, SCALE].forEach(v => {
+    const y = mid - (v/SCALE)*PH/2;
+    ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(W-PAD.r, y); ctx.stroke();
+    ctx.fillStyle='#8b949e'; ctx.font='10px Courier New'; ctx.textAlign='right';
+    ctx.fillText((v>0?'+':'')+v.toFixed(2)+'mV', PAD.l-3, y+4);
+  });
+  [0, EPOCH_MS*0.25, EPOCH_MS*0.5, EPOCH_MS*0.75, EPOCH_MS].forEach(ms => {
+    const x = PAD.l + PW * ms / EPOCH_MS;
+    ctx.beginPath(); ctx.moveTo(x, PAD.t); ctx.lineTo(x, H-PAD.b); ctx.stroke();
+    ctx.fillStyle='#8b949e'; ctx.font='10px Courier New'; ctx.textAlign='center';
+    ctx.fillText(ms.toFixed(0)+'ms', x, H-PAD.b+14);
+  });
+
+  // All waveforms overlaid (early = faded, late = vivid)
+  TRIAL_MILESTONES.forEach((n, ci) => {
+    const snap = snapshots[n];
+    if (!snap) return;
+    const color = CARD_COLORS[ci];
+    const alpha = 0.3 + 0.7 * ci / (TRIAL_MILESTONES.length - 1);
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = alpha;
+    ctx.lineWidth = 1 + ci * 0.4;
+    ctx.beginPath();
+    let first = true;
+    for (let i = 0; i < epochSamples; i++) {
+      const x = PAD.l + PW * i / epochSamples;
+      const y = Math.max(PAD.t, Math.min(PAD.t+PH, mid - (snap.avg[i]/SCALE)*PH/2));
+      first ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      first = false;
+    }
+    ctx.stroke();
+  });
+  ctx.globalAlpha = 1;
+
+  // Zero line
+  ctx.strokeStyle='rgba(139,148,158,0.25)'; ctx.lineWidth=1; ctx.setLineDash([3,4]);
+  ctx.beginPath(); ctx.moveTo(PAD.l, mid); ctx.lineTo(W-PAD.r, mid); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Legend
+  const lx = PAD.l + 8, ly = PAD.t + 8;
+  ctx.fillStyle='rgba(13,17,23,0.85)'; ctx.fillRect(lx-4, ly-4, 180, 22+TRIAL_MILESTONES.length*14);
+  TRIAL_MILESTONES.forEach((n, ci) => {
+    const snap = snapshots[n];
+    if (!snap) return;
+    const color = CARD_COLORS[ci];
+    ctx.fillStyle = color;
+    ctx.fillRect(lx, ly + 4 + ci*14, 18, 2);
+    ctx.font = '10px Courier New'; ctx.textAlign = 'left';
+    ctx.fillText(`N=${n}  SNR ${snap.snr.toFixed(1)}dB`, lx + 24, ly + 9 + ci*14);
+  });
+}
+
+// ── Build cards DOM ───────────────────────────────────────────
+function buildCards() {
+  const grid = document.getElementById('grid6');
+  grid.innerHTML = '';
+  TRIAL_MILESTONES.forEach((n, ci) => {
+    const color = CARD_COLORS[ci];
+    const card = document.createElement('div');
+    card.className = 'wave-card';
+    card.innerHTML = `
+      <div class="wc-header">
+        <span class="wc-title" style="color:${color}">N = ${n.toLocaleString()} Trial${n>1?'s':''}</span>
+        <span class="wc-info" id="wci-${n}" style="color:var(--muted)">—</span>
+      </div>
+      <canvas class="wc" id="wc-${n}" height="160"></canvas>
+    `;
+    grid.appendChild(card);
+  });
+}
+
+// ── Build insights ─────────────────────────────────────────────
+function buildInsights() {
+  const ig = document.getElementById('insightGrid');
+  ig.innerHTML = '';
+  TRIAL_MILESTONES.forEach((n, ci) => {
+    const snap = snapshots[n];
+    if (!snap) return;
+    const color = CARD_COLORS[ci];
+    const theorSnr = 10 * Math.log10(n); // SNR ∝ √N → dB = 10log10(N)
+    const card = document.createElement('div');
+    card.className = 'insight-card';
+    card.innerHTML = `
+      <div class="ins-label" style="color:${color}">N = ${n.toLocaleString()}</div>
+      <div class="ins-value" style="color:${color}">${snap.snr.toFixed(1)} dB</div>
+      <div style="font-size:10px;color:var(--muted);margin-top:3px;font-family:var(--mono)">
+        Teori: ${theorSnr.toFixed(1)} dB &nbsp;|&nbsp; Δ = ${(snap.snr - theorSnr).toFixed(1)} dB
+      </div>
+    `;
+    ig.appendChild(card);
+  });
+}
+
+// ── Run simulation ────────────────────────────────────────────
+let simRunning = false;
+
+async function runSim() {
+  if (simRunning) return;
+  simRunning = true;
+  const btn = document.getElementById('btnRun');
+  btn.className = 'stop'; btn.textContent = '⏳ Mensimulasikan…';
+
+  const dbScales = {60:0.3,70:0.55,80:1.0,90:1.6};
+  const dbLevel  = parseInt(document.getElementById('selDb').value);
+  const noise    = parseFloat(document.getElementById('selNoise').value);
+  const fs       = parseInt(document.getElementById('selFs').value);
+  const dbScale  = dbScales[dbLevel] || 1.0;
+
+  const maxTrials = 1000;
+  snapshots = {}; snrByTrial = [];
+
+  buildCards();
+
+  // Run in chunks to keep UI responsive
+  const { snaps, snrs, epochSamples } = await new Promise(resolve => {
+    setTimeout(() => resolve(generateEpochs(maxTrials, fs, dbScale, noise)), 10);
+  });
+  snapshots = snaps;
+  snrByTrial = snrs;
+
+  // Draw each card
+  TRIAL_MILESTONES.forEach((n, ci) => {
+    const snap = snapshots[n];
+    if (!snap) return;
+    const color = CARD_COLORS[ci];
+    const canvasEl = document.getElementById(`wc-${n}`);
+    const epochSamples = Math.round(fs * EPOCH_MS / 1000);
+    drawWaveCard(canvasEl, snap.avg, epochSamples, color, n, snap.snr);
+    const infoEl = document.getElementById(`wci-${n}`);
+    if (infoEl) infoEl.textContent = `SNR ${snap.snr.toFixed(1)} dB`;
+    document.getElementById('progFill').style.width = ((ci+1)/TRIAL_MILESTONES.length*100)+'%';
+  });
+
+  drawOverlay(Math.round(fs * EPOCH_MS / 1000));
+  buildInsights();
+
+  btn.className = 'primary'; btn.textContent = '▶ Jalankan Ulang';
+  document.getElementById('progFill').style.width = '100%';
+  simRunning = false;
+}
+
+document.getElementById('btnRun').addEventListener('click', runSim);
+document.getElementById('btnReset').addEventListener('click', () => {
+  snapshots = {}; snrByTrial = [];
+  document.getElementById('grid6').innerHTML = '';
+  document.getElementById('insightGrid').innerHTML = '';
+  document.getElementById('progFill').style.width = '0%';
+  buildCards();
+  const { ctx: oc, W: ow, H: oh } = setupCanvas('cOverlay');
+  oc.clearRect(0, 0, ow, oh);
+  oc.fillStyle = '#8b949e'; oc.font = '12px sans-serif'; oc.textAlign = 'center';
+  oc.fillText('Tekan ▶ Jalankan Simulasi untuk mulai', ow/2, oh/2);
+  document.getElementById('btnRun').className = 'primary';
+  document.getElementById('btnRun').textContent = '▶ Jalankan Simulasi';
+});
+
+window.addEventListener('resize', () => {
+  if (Object.keys(snapshots).length === 0) return;
+  const fs = parseInt(document.getElementById('selFs').value);
+  const epochSamples = Math.round(fs * EPOCH_MS / 1000);
+  TRIAL_MILESTONES.forEach((n, ci) => {
+    const snap = snapshots[n];
+    if (!snap) return;
+    const color = CARD_COLORS[ci];
+    const canvasEl = document.getElementById(`wc-${n}`);
+    if (canvasEl) drawWaveCard(canvasEl, snap.avg, epochSamples, color, n, snap.snr);
+  });
+  drawOverlay(epochSamples);
+});
+
+// ── Init — load dari dummy.json, fallback ke placeholder ─────
+buildCards();
+
+fetch('data/dummy.json')
+  .then(r => r.json())
+  .then(data => {
+    const fs = 860;
+    const epochSamples = Math.round(fs * EPOCH_MS / 1000);
+    TRIAL_MILESTONES.forEach((n, ci) => {
+      const snap = data.snapshots[String(n)];
+      if (!snap) return;
+      const avg = new Float64Array(snap.abr_average[0]);
+      const snr = snap.snr[0];
+      snapshots[n] = { avg, snr };
+      const canvasEl = document.getElementById(`wc-${n}`);
+      if (canvasEl) drawWaveCard(canvasEl, avg, epochSamples, CARD_COLORS[ci], n, snr);
+      const infoEl = document.getElementById(`wci-${n}`);
+      if (infoEl) infoEl.textContent = `SNR ${snr.toFixed(1)} dB`;
+      document.getElementById('progFill').style.width = ((ci+1)/TRIAL_MILESTONES.length*100)+'%';
+    });
+    drawOverlay(epochSamples);
+    buildInsights();
+    document.getElementById('btnRun').className = 'primary';
+    document.getElementById('btnRun').textContent = '▶ Jalankan Ulang';
+    document.getElementById('progFill').style.width = '100%';
+    console.log('[ABR-EVO] dummy.json loaded OK');
+  })
+  .catch(() => {
+    // Fallback: tampilkan placeholder
+    const { ctx: oc, W: ow, H: oh } = setupCanvas('cOverlay');
+    oc.fillStyle = '#8b949e'; oc.font = '12px sans-serif'; oc.textAlign = 'center';
+    oc.fillText('Tekan ▶ Jalankan Simulasi untuk mulai', ow/2, oh/2);
+  });
+</script>
+</body>
+</html>

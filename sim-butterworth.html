@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Respons Frekuensi Filter Butterworth Bandpass Orde-2</title>
+<style>
+:root{--bg:#0d1117;--panel:#161b22;--border:#30363d;--text:#e6edf3;--muted:#8b949e;--accent:#58a6ff;--green:#3fb950;--yellow:#d29922;--red:#f85149;--orange:#ffa657;--purple:#bc8cff;--mono:'Courier New',monospace}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px;padding:16px}
+.header{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+.header h1{font-size:15px;font-weight:700}
+.badge{padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600}
+.badge-blue{background:rgba(88,166,255,.15);color:var(--accent);border:1px solid rgba(88,166,255,.3)}
+.badge-green{background:rgba(63,185,80,.2);color:var(--green);border:1px solid rgba(63,185,80,.4)}
+.badge-orange{background:rgba(255,166,87,.15);color:var(--orange);border:1px solid rgba(255,166,87,.3)}
+.badge-purple{background:rgba(188,140,255,.15);color:var(--purple);border:1px solid rgba(188,140,255,.3)}
+.controls{display:flex;gap:12px;flex-wrap:wrap;padding:10px 14px;background:var(--panel);border:1px solid var(--border);border-radius:8px;margin-bottom:12px;align-items:center}
+.ctrl-group{display:flex;gap:6px;align-items:center}
+label{color:var(--muted);font-size:11px;white-space:nowrap}
+select,input[type=number]{padding:4px 8px;background:#21262d;border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;cursor:pointer;width:80px}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:12px}
+.panel-header{padding:8px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.02);flex-wrap:wrap}
+.panel-title{font-weight:700;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+canvas{display:block;width:100%;background:#0a0e14}
+.info-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;margin-bottom:12px}
+.info-card{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:10px 14px}
+.info-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px}
+.info-value{font-family:var(--mono);font-size:15px;font-weight:700}
+.legend{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.leg-item{display:flex;gap:5px;align-items:center;font-size:11px;color:var(--muted)}
+.leg-line{width:24px;height:3px;border-radius:2px}
+.formula-box{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:10px 16px;font-family:var(--mono);font-size:11.5px;color:var(--text);margin-bottom:12px;display:flex;gap:20px;flex-wrap:wrap;align-items:center}
+.formula-box .eq{color:var(--accent)}
+.formula-box .note{color:var(--muted);font-size:10.5px}
+.sos-box{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:12px 16px;margin-bottom:12px;font-family:var(--mono);font-size:11px}
+.sos-title{color:var(--muted);font-size:10px;text-transform:uppercase;margin-bottom:8px;letter-spacing:.05em}
+.sos-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.sos-section{background:#0d1117;border:1px solid var(--border);border-radius:6px;padding:8px 12px}
+.sos-head{color:var(--purple);font-weight:700;margin-bottom:6px}
+.coef-row{display:flex;gap:10px;color:var(--text);margin-bottom:3px}
+.coef-key{color:var(--muted);min-width:24px}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>🔬 Respons Frekuensi — Butterworth Bandpass Orde-2 (2 SOS)</h1>
+  <span class="badge badge-purple">FiltFilt (zero-phase)</span>
+  <span class="badge badge-green">Scipy-equivalent</span>
+  <span class="badge badge-orange">backend/internal/dsp/filter.go</span>
+</div>
+
+<div class="formula-box">
+  <span><span style="color:var(--muted)">Transfer function:</span>
+  <span class="eq"> H(z) = H₁(z) × H₂(z)</span></span>
+  <span><span style="color:var(--muted)">Per SOS:</span>
+  <span class="eq"> H_k(z) = (b₀ + b₁z⁻¹ + b₂z⁻²) / (1 + a₁z⁻¹ + a₂z⁻²)</span></span>
+  <span><span style="color:var(--muted)">Evaluasi:</span>
+  <span class="eq"> z = e^(jω),  ω = 2π·f / fs</span></span>
+  <span class="note">FiltFilt = forward + backward pass → orde efektif 4, fase nol</span>
+</div>
+
+<div class="controls">
+  <div class="ctrl-group">
+    <label>Cutoff Bawah (Hz)</label>
+    <input type="number" id="inpLow" value="100" min="1" max="10000" step="10">
+  </div>
+  <div class="ctrl-group">
+    <label>Cutoff Atas (Hz)</label>
+    <input type="number" id="inpHigh" value="3000" min="10" max="20000" step="100">
+  </div>
+  <div class="ctrl-group">
+    <label>Sample Rate (Hz)</label>
+    <select id="selFs">
+      <option value="860" selected>860 (ADS1115)</option>
+      <option value="500">500 (ADS1299)</option>
+      <option value="44100">44100 (PCM5102A)</option>
+      <option value="16000">16000</option>
+      <option value="8000">8000</option>
+    </select>
+  </div>
+  <div class="ctrl-group">
+    <label>Skala X</label>
+    <select id="selScale">
+      <option value="log" selected>Log Hz</option>
+      <option value="linear">Linear Hz</option>
+    </select>
+  </div>
+  <div class="ctrl-group">
+    <label>FiltFilt (2× orde)</label>
+    <select id="selFiltfilt">
+      <option value="1" selected>Aktif (fase nol)</option>
+      <option value="0">Nonaktif (orde-2)</option>
+    </select>
+  </div>
+</div>
+
+<div class="info-grid">
+  <div class="info-card">
+    <div class="info-label">Cutoff Bawah (actual)</div>
+    <div class="info-value" id="vLow" style="color:var(--accent)">100 Hz</div>
+  </div>
+  <div class="info-card">
+    <div class="info-label">Cutoff Atas (actual)</div>
+    <div class="info-value" id="vHigh" style="color:var(--green)">3000 Hz</div>
+  </div>
+  <div class="info-card">
+    <div class="info-label">Lebar Pita</div>
+    <div class="info-value" id="vBW" style="color:var(--orange)">—</div>
+  </div>
+  <div class="info-card">
+    <div class="info-label">Frekuensi Tengah</div>
+    <div class="info-value" id="vFc" style="color:var(--yellow)">—</div>
+  </div>
+  <div class="info-card">
+    <div class="info-label">Nyquist</div>
+    <div class="info-value" id="vNyq" style="color:var(--muted)">430 Hz</div>
+  </div>
+  <div class="info-card">
+    <div class="info-label">Rolloff (dB/oktav)</div>
+    <div class="info-value" id="vRoll" style="color:var(--purple)">—</div>
+  </div>
+</div>
+
+<!-- Magnitude Panel -->
+<div class="panel">
+  <div class="panel-header">
+    <span class="panel-title">📈 Respons Magnitudo |H(f)| — dB</span>
+    <div class="legend" style="margin-left:auto">
+      <div class="leg-item"><div class="leg-line" style="background:var(--accent)"></div>|H(f)| orde-2</div>
+      <div class="leg-item"><div class="leg-line" style="background:var(--green)"></div>FiltFilt (×2)</div>
+      <div class="leg-item"><div class="leg-line" style="background:rgba(248,81,73,0.6);height:1px;border-top:1px dashed var(--red)"></div>−3dB</div>
+      <div class="leg-item" style="background:rgba(88,166,255,.07);padding:2px 6px;border-radius:3px;border:1px solid rgba(88,166,255,.2)">Passband</div>
+    </div>
+  </div>
+  <canvas id="cMag" height="260"></canvas>
+</div>
+
+<!-- Phase Panel -->
+<div class="panel">
+  <div class="panel-header">
+    <span class="panel-title">🔄 Respons Fase ∠H(f) — Derajat</span>
+    <div class="legend" style="margin-left:auto">
+      <div class="leg-item"><div class="leg-line" style="background:var(--orange)"></div>Fase orde-2</div>
+      <div class="leg-item"><div class="leg-line" style="background:rgba(63,185,80,.5);height:1px;border-top:2px dashed var(--green)"></div>FiltFilt (= 0°)</div>
+    </div>
+  </div>
+  <canvas id="cPhase" height="200"></canvas>
+</div>
+
+<!-- SOS Coefficients -->
+<div class="sos-box">
+  <div class="sos-title">Koefisien SOS (Second-Order Sections) — identik dengan filter.go:ButterBP()</div>
+  <div class="sos-grid">
+    <div class="sos-section" id="sos1">
+      <div class="sos-head">SOS-1</div>
+      <div class="coef-row"><span class="coef-key">b:</span><span id="s1b">—</span></div>
+      <div class="coef-row"><span class="coef-key">a:</span><span id="s1a">—</span></div>
+    </div>
+    <div class="sos-section" id="sos2">
+      <div class="sos-head">SOS-2</div>
+      <div class="coef-row"><span class="coef-key">b:</span><span id="s2b">—</span></div>
+      <div class="coef-row"><span class="coef-key">a:</span><span id="s2a">—</span></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── ButterBP: port langsung dari filter.go ─────────────────────
+function complexSqrt(re, im) {
+  const r = Math.sqrt(re*re + im*im);
+  const sr = Math.sqrt((r + re) / 2);
+  const si = (im >= 0 ? 1 : -1) * Math.sqrt((r - re) / 2);
+  return [sr, si];
+}
+
+function butterBP(lowHz, highHz, fsHz) {
+  const w1   = 2 * Math.tan(Math.PI * lowHz  / fsHz);
+  const w2   = 2 * Math.tan(Math.PI * highHz / fsHz);
+  const bw   = w2 - w1;
+  const w0sq = w1 * w2;
+
+  // LP prototype pole: p = (-1+j)/√2
+  const lp = [-1/Math.SQRT2, 1/Math.SQRT2];
+
+  // bwp = bw * lp  (complex multiply)
+  const bwpRe = bw * lp[0], bwpIm = bw * lp[1];
+
+  // disc = bwp² − 4*w0sq
+  const discRe = bwpRe*bwpRe - bwpIm*bwpIm - 4*w0sq;
+  const discIm = 2*bwpRe*bwpIm;
+
+  const [sqRe, sqIm] = complexSqrt(discRe, discIm);
+
+  const bp1 = [(bwpRe+sqRe)/2, (bwpIm+sqIm)/2];
+  const bp2 = [(bwpRe-sqRe)/2, (bwpIm-sqIm)/2];
+
+  function makeSOS(bp) {
+    const p1  = -2 * bp[0];
+    const p0  = bp[0]*bp[0] + bp[1]*bp[1]; // |bp|²
+    const a0  = 4 + 2*p1 + p0;
+    return {
+      b: [2*bw/a0, 0, -2*bw/a0],
+      a: [1, (-8 + 2*p0)/a0, (4 - 2*p1 + p0)/a0],
+    };
+  }
+  return [makeSOS(bp1), makeSOS(bp2)];
+}
+
+// ── Evaluate H(e^jω) at frequency f (Hz), single SOS ──────────
+function evalSOS(sos, f, fs) {
+  const omega = 2 * Math.PI * f / fs;
+  const cos1 = Math.cos(omega), sin1 = Math.sin(omega);
+  const cos2 = Math.cos(2*omega), sin2 = Math.sin(2*omega);
+
+  // Numerator: b0 + b1*e^-jω + b2*e^-2jω
+  const numRe = sos.b[0] + sos.b[1]*cos1 + sos.b[2]*cos2;
+  const numIm = -(sos.b[1]*sin1 + sos.b[2]*sin2);
+  // Denominator: 1 + a1*e^-jω + a2*e^-2jω
+  const denRe = 1 + sos.a[1]*cos1 + sos.a[2]*cos2;
+  const denIm = -(sos.a[1]*sin1 + sos.a[2]*sin2);
+
+  // H = num / den
+  const dSq = denRe*denRe + denIm*denIm;
+  return [(numRe*denRe + numIm*denIm)/dSq, (numIm*denRe - numRe*denIm)/dSq];
+}
+
+// ── Compute H at all frequencies ───────────────────────────────
+function computeResponse(sections, fs, N = 2000) {
+  const nyq = fs / 2;
+  const mags = [], phases = [], freqs = [];
+  for (let i = 1; i <= N; i++) {
+    const f = nyq * i / N;
+    freqs.push(f);
+    // Product of all SOS
+    let re = 1, im = 0;
+    for (const sos of sections) {
+      const [hr, hi] = evalSOS(sos, f, fs);
+      const nr = re*hr - im*hi;
+      const ni = re*hi + im*hr;
+      re = nr; im = ni;
+    }
+    const mag_sq = re*re + im*im;
+    mags.push(10 * Math.log10(Math.max(mag_sq, 1e-20)));
+    phases.push(Math.atan2(im, re) * 180 / Math.PI);
+  }
+  return { freqs, mags, phases };
+}
+
+// ── Canvas draw helpers ────────────────────────────────────────
+function setupCanvas(id) {
+  const c = document.getElementById(id);
+  const dpr = window.devicePixelRatio || 1;
+  c.width  = c.offsetWidth  * dpr;
+  c.height = c.offsetHeight * dpr;
+  const ctx = c.getContext('2d');
+  ctx.scale(dpr, dpr);
+  return { ctx, W: c.offsetWidth, H: c.offsetHeight };
+}
+
+function getToX(W, PAD, scale, maxHz) {
+  if (scale === 'log') {
+    const minLog = Math.log10(2), maxLog = Math.log10(maxHz);
+    return hz => PAD.l + (W - PAD.l - PAD.r) * (Math.log10(Math.max(2, hz)) - minLog) / (maxLog - minLog);
+  }
+  return hz => PAD.l + (W - PAD.l - PAD.r) * hz / maxHz;
+}
+
+function drawGrid(ctx, W, H, PAD, toX, xVals, yRange, yLabel) {
+  const PH = H - PAD.t - PAD.b;
+  const toY = v => PAD.t + PH * (1 - (v - yRange.min) / (yRange.max - yRange.min));
+
+  ctx.strokeStyle = '#1c2430'; ctx.lineWidth = 1;
+  yRange.ticks.forEach(({ v, lbl }) => {
+    const y = toY(v);
+    ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(W - PAD.r, y); ctx.stroke();
+    ctx.fillStyle = '#8b949e'; ctx.font = '10px Courier New'; ctx.textAlign = 'right';
+    ctx.fillText(lbl, PAD.l - 3, y + 4);
+  });
+  xVals.forEach(({ hz, lbl }) => {
+    const x = toX(hz);
+    if (x < PAD.l || x > W - PAD.r) return;
+    ctx.beginPath(); ctx.moveTo(x, PAD.t); ctx.lineTo(x, H - PAD.b); ctx.stroke();
+    ctx.fillStyle = '#8b949e'; ctx.font = '10px Courier New'; ctx.textAlign = 'center';
+    ctx.fillText(lbl, x, H - PAD.b + 14);
+  });
+  ctx.save(); ctx.translate(10, H/2); ctx.rotate(-Math.PI/2);
+  ctx.textAlign = 'center'; ctx.fillStyle = '#8b949e'; ctx.font = '10px sans-serif';
+  ctx.fillText(yLabel, 0, 0); ctx.restore();
+  return toY;
+}
+
+function logXTicks(maxHz) {
+  return [1,2,5,10,20,50,100,200,500,1000,2000,5000,10000,20000]
+    .filter(h => h >= 2 && h <= maxHz)
+    .map(h => ({ hz: h, lbl: h >= 1000 ? (h/1000)+'k' : h+'' }));
+}
+function linXTicks(maxHz) {
+  const step = maxHz <= 500 ? 50 : maxHz <= 2000 ? 200 : 1000;
+  const ticks = [];
+  for (let h = 0; h <= maxHz; h += step) ticks.push({ hz: h, lbl: h >= 1000 ? (h/1000)+'k' : h+'' });
+  return ticks;
+}
+
+// ── Main draw ─────────────────────────────────────────────────
+function redraw() {
+  let lowHz  = parseFloat(document.getElementById('inpLow').value) || 100;
+  let highHz = parseFloat(document.getElementById('inpHigh').value) || 3000;
+  const fs   = parseFloat(document.getElementById('selFs').value);
+  const scale = document.getElementById('selScale').value;
+  const filtfilt = parseInt(document.getElementById('selFiltfilt').value);
+
+  // SafeBandpass guards (from filter.go)
+  const nyq = fs / 2;
+  if (highHz > nyq * 0.95) highHz = nyq * 0.95;
+  if (lowHz < 0.5) lowHz = 0.5;
+
+  document.getElementById('vLow').textContent  = lowHz.toFixed(1)  + ' Hz';
+  document.getElementById('vHigh').textContent = highHz.toFixed(1) + ' Hz';
+  document.getElementById('vNyq').textContent  = nyq.toFixed(1)   + ' Hz';
+  document.getElementById('vBW').textContent   = (highHz - lowHz).toFixed(1) + ' Hz';
+  document.getElementById('vFc').textContent   = Math.sqrt(lowHz * highHz).toFixed(1) + ' Hz';
+
+  const sections = butterBP(lowHz, highHz, fs);
+
+  // Show coefficients
+  const fmt = v => v.toFixed(6);
+  document.getElementById('s1b').textContent = sections[0].b.map(fmt).join(', ');
+  document.getElementById('s1a').textContent = [1, sections[0].a[1], sections[0].a[2]].map(fmt).join(', ');
+  document.getElementById('s2b').textContent = sections[1].b.map(fmt).join(', ');
+  document.getElementById('s2a').textContent = [1, sections[1].a[1], sections[1].a[2]].map(fmt).join(', ');
+
+  const resp = computeResponse(sections, fs, 4000);
+  const { freqs, mags, phases } = resp;
+
+  // FiltFilt doubles the order (cascade forward+backward → square the spectrum)
+  const magsFF = mags.map(m => m * (filtfilt ? 2 : 1));
+
+  // Rolloff estimate
+  const bwOct = Math.log2(highHz / lowHz);
+  const roll = filtfilt ? 24 / bwOct : 12 / bwOct; // dB/octave approx outside band
+  document.getElementById('vRoll').textContent = (filtfilt ? 24 : 12) + ' dB/oct';
+
+  const maxHz = nyq;
+  const xTicks = scale === 'log' ? logXTicks(maxHz) : linXTicks(maxHz);
+
+  // ── Magnitude ─────────────────────────────────────────────
+  {
+    const { ctx, W, H } = setupCanvas('cMag');
+    ctx.clearRect(0, 0, W, H);
+    const PAD = { l: 52, r: 20, t: 16, b: 28 };
+    const PW = W - PAD.l - PAD.r, PH = H - PAD.t - PAD.b;
+    const DB_MIN = -80, DB_MAX = 10;
+    const yTicks = { min: DB_MIN, max: DB_MAX, ticks: [-80,-60,-40,-20,-10,-6,-3,0,3].map(d => ({v:d,lbl:d+''})) };
+    const toX = getToX(W, PAD, scale, maxHz);
+    const toY = drawGrid(ctx, W, H, PAD, toX, xTicks, yTicks, 'Magnitudo (dB)');
+
+    // Passband region shading
+    const x1 = toX(lowHz), x2 = toX(Math.min(highHz, maxHz));
+    ctx.fillStyle = 'rgba(88,166,255,0.06)';
+    ctx.fillRect(x1, PAD.t, x2 - x1, PH);
+    ctx.strokeStyle = 'rgba(88,166,255,0.3)'; ctx.lineWidth = 1; ctx.setLineDash([3,3]);
+    ctx.beginPath(); ctx.moveTo(x1, PAD.t); ctx.lineTo(x1, H-PAD.b); ctx.stroke();
+    if (x2 < W - PAD.r) { ctx.beginPath(); ctx.moveTo(x2, PAD.t); ctx.lineTo(x2, H-PAD.b); ctx.stroke(); }
+    ctx.setLineDash([]);
+
+    // −3dB line
+    const y3 = toY(-3 * (filtfilt ? 2 : 1));
+    ctx.strokeStyle = 'rgba(248,81,73,0.5)'; ctx.lineWidth = 1; ctx.setLineDash([5,5]);
+    ctx.beginPath(); ctx.moveTo(PAD.l, y3); ctx.lineTo(W-PAD.r, y3); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(248,81,73,0.8)'; ctx.font = '10px Courier New'; ctx.textAlign = 'right';
+    ctx.fillText('−3dB', W-PAD.r, y3 - 3);
+
+    // Orde-2 curve
+    ctx.strokeStyle = 'rgba(88,166,255,0.5)'; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    let first = true;
+    for (let i = 0; i < freqs.length; i++) {
+      if (freqs[i] > maxHz) break;
+      const x = toX(freqs[i]);
+      const y = toY(Math.max(DB_MIN, mags[i]));
+      first ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      first = false;
+    }
+    ctx.stroke();
+
+    // FiltFilt curve
+    ctx.strokeStyle = '#3fb950'; ctx.lineWidth = 2.5;
+    ctx.beginPath(); first = true;
+    for (let i = 0; i < freqs.length; i++) {
+      if (freqs[i] > maxHz) break;
+      const x = toX(freqs[i]);
+      const y = toY(Math.max(DB_MIN, magsFF[i]));
+      first ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      first = false;
+    }
+    ctx.stroke();
+
+    // 0dB reference
+    const y0 = toY(0);
+    ctx.strokeStyle = 'rgba(139,148,158,0.3)'; ctx.lineWidth=1; ctx.setLineDash([2,4]);
+    ctx.beginPath(); ctx.moveTo(PAD.l, y0); ctx.lineTo(W-PAD.r, y0); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Annotations
+    ctx.fillStyle = 'rgba(13,17,23,0.8)'; ctx.fillRect(PAD.l+8, PAD.t+8, 200, 52);
+    ctx.strokeStyle = '#30363d'; ctx.lineWidth = 1; ctx.strokeRect(PAD.l+8, PAD.t+8, 200, 52);
+    ctx.fillStyle = '#e6edf3'; ctx.font = 'bold 10.5px Courier New'; ctx.textAlign = 'left';
+    ctx.fillText(`Passband:  ${lowHz.toFixed(0)} – ${highHz.toFixed(0)} Hz`, PAD.l+14, PAD.t+22);
+    ctx.fillText(`BW:        ${(highHz-lowHz).toFixed(1)} Hz`, PAD.l+14, PAD.t+36);
+    ctx.fillText(`FiltFilt:  ${filtfilt ? '✓ (orde efektif 4)' : '✗ (orde 2)'}`, PAD.l+14, PAD.t+50);
+  }
+
+  // ── Phase ─────────────────────────────────────────────────
+  {
+    const { ctx, W, H } = setupCanvas('cPhase');
+    ctx.clearRect(0, 0, W, H);
+    const PAD = { l: 52, r: 20, t: 16, b: 28 };
+    const PH = H - PAD.t - PAD.b;
+    const toX = getToX(W, PAD, scale, maxHz);
+    const yTicks = { min:-180, max:180, ticks:[-180,-90,-45,0,45,90,180].map(d=>({v:d,lbl:d+'°'})) };
+    const toY = drawGrid(ctx, W, H, PAD, toX, xTicks, yTicks, 'Fase (°)');
+
+    // FiltFilt = fase nol
+    if (filtfilt) {
+      ctx.strokeStyle = 'rgba(63,185,80,0.4)'; ctx.lineWidth = 2; ctx.setLineDash([6,4]);
+      const y0 = toY(0);
+      ctx.beginPath(); ctx.moveTo(PAD.l, y0); ctx.lineTo(W-20, y0); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(63,185,80,0.7)'; ctx.font = '11px Courier New'; ctx.textAlign = 'left';
+      ctx.fillText('FiltFilt → Fase = 0° (zero-phase)', PAD.l + 8, toY(0) - 8);
+    }
+
+    // Orde-2 phase
+    ctx.strokeStyle = '#ffa657'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    let first = true, prevPhase = 0;
+    for (let i = 0; i < freqs.length; i++) {
+      if (freqs[i] > maxHz) break;
+      const x = toX(freqs[i]);
+      let ph = phases[i];
+      // Unwrap
+      if (!first) {
+        while (ph - prevPhase > 180)  ph -= 360;
+        while (ph - prevPhase < -180) ph += 360;
+      }
+      prevPhase = ph;
+      const phClip = Math.max(-180, Math.min(180, ph));
+      const y = toY(phClip);
+      first ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      first = false;
+    }
+    ctx.stroke();
+
+    // 0° line
+    ctx.strokeStyle = 'rgba(139,148,158,0.25)'; ctx.lineWidth=1; ctx.setLineDash([3,4]);
+    const y0 = toY(0); ctx.beginPath(); ctx.moveTo(PAD.l, y0); ctx.lineTo(W-PAD.r, y0); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Passband markers
+    const x1 = toX(lowHz), x2 = toX(Math.min(highHz, maxHz));
+    ctx.strokeStyle = 'rgba(88,166,255,0.3)'; ctx.lineWidth=1; ctx.setLineDash([3,3]);
+    ctx.beginPath(); ctx.moveTo(x1, PAD.t); ctx.lineTo(x1, H-PAD.b); ctx.stroke();
+    if (x2 < W-PAD.r) { ctx.beginPath(); ctx.moveTo(x2, PAD.t); ctx.lineTo(x2, H-PAD.b); ctx.stroke(); }
+    ctx.setLineDash([]);
+  }
+}
+
+['inpLow','inpHigh','selFs','selScale','selFiltfilt'].forEach(id =>
+  document.getElementById(id).addEventListener('change', redraw));
+window.addEventListener('resize', redraw);
+redraw();
+</script>
+</body>
+</html>

@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Simulasi Tone Burst 1000 Hz — Hanning Envelope & FFT</title>
+<style>
+:root{--bg:#0d1117;--panel:#161b22;--border:#30363d;--text:#e6edf3;--muted:#8b949e;--accent:#58a6ff;--green:#3fb950;--yellow:#d29922;--red:#f85149;--orange:#ffa657;--purple:#bc8cff;--mono:'Courier New',monospace}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px;padding:16px}
+.header{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+.header h1{font-size:15px;font-weight:700}
+.badge{padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600}
+.badge-blue{background:rgba(88,166,255,.15);color:var(--accent);border:1px solid rgba(88,166,255,.3)}
+.badge-green{background:rgba(63,185,80,.2);color:var(--green);border:1px solid rgba(63,185,80,.4)}
+.badge-orange{background:rgba(255,166,87,.15);color:var(--orange);border:1px solid rgba(255,166,87,.3)}
+.badge-purple{background:rgba(188,140,255,.15);color:var(--purple);border:1px solid rgba(188,140,255,.3)}
+.controls{display:flex;gap:8px;flex-wrap:wrap;padding:10px 14px;background:var(--panel);border:1px solid var(--border);border-radius:8px;margin-bottom:12px;align-items:center}
+.ctrl-group{display:flex;gap:6px;align-items:center}
+label{color:var(--muted);font-size:11px;white-space:nowrap}
+select,input[type=range]{padding:4px 8px;background:#21262d;border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;cursor:pointer}
+input[type=range]{-webkit-appearance:none;height:4px;background:#30363d;border:none;padding:0;width:100px}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--accent);cursor:pointer}
+.val-disp{font-family:var(--mono);font-size:11px;color:var(--accent);min-width:40px}
+button{padding:5px 14px;border-radius:6px;border:1px solid var(--border);background:#21262d;color:var(--text);font-size:12px;cursor:pointer;font-weight:600}
+button:hover{background:#30363d}
+button.active{background:rgba(88,166,255,.15);border-color:var(--accent);color:var(--accent)}
+.main-grid{display:grid;grid-template-columns:62% 38%;gap:12px;margin-bottom:12px}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.panel-header{padding:8px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.02)}
+.panel-title{font-weight:700;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+canvas{display:block;width:100%;background:#0a0e14}
+.info-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin-bottom:12px}
+.info-card{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:10px 14px}
+.info-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px}
+.info-value{font-family:var(--mono);font-size:15px;font-weight:700}
+.legend{display:flex;gap:16px;padding:8px 14px;flex-wrap:wrap;align-items:center}
+.leg-item{display:flex;gap:6px;align-items:center;font-size:11px;color:var(--muted)}
+.leg-line{width:28px;height:3px;border-radius:2px}
+.formula-box{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:10px 16px;font-family:var(--mono);font-size:12px;color:var(--text);margin-bottom:12px;display:flex;gap:24px;flex-wrap:wrap;align-items:center}
+.formula-box .eq{color:var(--accent)}
+.formula-box .note{color:var(--muted);font-size:11px}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>🎵 Simulasi Tone Burst 1000 Hz — Domain Waktu & Spektrum FFT</h1>
+  <span class="badge badge-green">PCM5102A @ 44100 SPS</span>
+  <span class="badge badge-orange">Hanning Window</span>
+  <span class="badge badge-blue">FFT 8192 pts</span>
+</div>
+
+<!-- Formula Box -->
+<div class="formula-box">
+  <span>
+    <span style="color:var(--muted)">Tone Burst:</span>
+    <span class="eq"> x(t) = A · w(t) · sin(2π·f₀·t)</span>
+  </span>
+  <span>
+    <span style="color:var(--muted)">Hanning:</span>
+    <span class="eq"> w(n) = 0.5 · [1 − cos(2πn / N)]</span>
+  </span>
+  <span>
+    <span style="color:var(--muted)">Durasi:</span>
+    <span class="eq"> T = N_siklus / f₀</span>
+  </span>
+  <span class="note">Dipakai di PCM5102A via I2S untuk stimulus ABR</span>
+</div>
+
+<!-- Controls -->
+<div class="controls">
+  <div class="ctrl-group">
+    <label>Frekuensi f₀</label>
+    <select id="selFreq">
+      <option value="500">500 Hz</option>
+      <option value="1000" selected>1000 Hz</option>
+      <option value="2000">2000 Hz</option>
+      <option value="4000">4000 Hz</option>
+    </select>
+  </div>
+  <div class="ctrl-group">
+    <label>Jumlah Siklus</label>
+    <select id="selCycles">
+      <option value="1">1 siklus</option>
+      <option value="2">2 siklus</option>
+      <option value="4" selected>4 siklus</option>
+      <option value="8">8 siklus</option>
+      <option value="16">16 siklus</option>
+    </select>
+  </div>
+  <div class="ctrl-group">
+    <label>Level (dB SPL)</label>
+    <select id="selDb">
+      <option value="0.032">60 dB</option>
+      <option value="0.100">70 dB</option>
+      <option value="0.316" selected>80 dB</option>
+      <option value="1.000">90 dB</option>
+    </select>
+  </div>
+  <div class="ctrl-group">
+    <label>Window</label>
+    <select id="selWin">
+      <option value="hanning" selected>Hanning</option>
+      <option value="rect">Rectangular (no window)</option>
+      <option value="blackman">Blackman</option>
+      <option value="hamming">Hamming</option>
+    </select>
+  </div>
+  <div class="ctrl-group">
+    <label>Skala FFT</label>
+    <select id="selFftScale">
+      <option value="linear">Linear Hz</option>
+      <option value="log" selected>Log Hz</option>
+    </select>
+  </div>
+</div>
+
+<!-- Info cards -->
+<div class="info-grid">
+  <div class="info-card">
+    <div class="info-label">Frekuensi Carrier</div>
+    <div class="info-value" id="vF0" style="color:var(--accent)">1000 Hz</div>
+  </div>
+  <div class="info-card">
+    <div class="info-label">Durasi Burst</div>
+    <div class="info-value" id="vDur" style="color:var(--green)">4.00 ms</div>
+  </div>
+  <div class="info-card">
+    <div class="info-label">Jumlah Sampel</div>
+    <div class="info-value" id="vNsamp" style="color:var(--text)">176</div>
+  </div>
+  <div class="info-card">
+    <div class="info-label">Lebar Pita −3dB</div>
+    <div class="info-value" id="vBW" style="color:var(--orange)">— Hz</div>
+  </div>
+  <div class="info-card">
+    <div class="info-label">Frekuensi Puncak FFT</div>
+    <div class="info-value" id="vPeak" style="color:var(--yellow)">1000 Hz</div>
+  </div>
+  <div class="info-card">
+    <div class="info-label">Amplitudo Maks (PCM)</div>
+    <div class="info-value" id="vAmp" style="color:var(--purple)">10370</div>
+  </div>
+</div>
+
+<!-- Main grid: Time domain | FFT -->
+<div class="main-grid">
+  <!-- Time domain -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="panel-title">📈 Domain Waktu</span>
+      <div class="legend" style="padding:0;margin-left:auto">
+        <div class="leg-item"><div class="leg-line" style="background:rgba(88,166,255,.4);border-top:2px dashed var(--accent)"></div>Carrier sin</div>
+        <div class="leg-item"><div class="leg-line" style="background:var(--orange)"></div>Envelope</div>
+        <div class="leg-item"><div class="leg-line" style="background:var(--green)"></div>Tone Burst</div>
+      </div>
+    </div>
+    <canvas id="cTime" height="320"></canvas>
+  </div>
+  <!-- FFT -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="panel-title">📊 Spektrum FFT (Magnitudo dB)</span>
+    </div>
+    <canvas id="cFFT" height="320"></canvas>
+  </div>
+</div>
+
+<script>
+// ── Constants ──────────────────────────────────────────────────
+const FS = 44100; // I2S_SAMPLE_RATE dari firmware
+
+// ── FFT (Cooley-Tukey, in-place) ──────────────────────────────
+function fft(re, im) {
+  const n = re.length;
+  for (let i = 1, j = 0; i < n; i++) {
+    let bit = n >> 1;
+    for (; j & bit; bit >>= 1) j ^= bit;
+    j ^= bit;
+    if (i < j) {
+      [re[i], re[j]] = [re[j], re[i]];
+      [im[i], im[j]] = [im[j], im[i]];
+    }
+  }
+  for (let len = 2; len <= n; len <<= 1) {
+    const ang = -2 * Math.PI / len;
+    const wRe = Math.cos(ang), wIm = Math.sin(ang);
+    for (let i = 0; i < n; i += len) {
+      let cRe = 1, cIm = 0;
+      for (let j = 0; j < len >> 1; j++) {
+        const uRe = re[i+j], uIm = im[i+j];
+        const vRe = re[i+j+len/2]*cRe - im[i+j+len/2]*cIm;
+        const vIm = re[i+j+len/2]*cIm + im[i+j+len/2]*cRe;
+        re[i+j] = uRe+vRe; im[i+j] = uIm+vIm;
+        re[i+j+len/2] = uRe-vRe; im[i+j+len/2] = uIm-vIm;
+        const nr = cRe*wRe - cIm*wIm; cIm = cRe*wIm + cIm*wRe; cRe = nr;
+      }
+    }
+  }
+}
+
+// ── Window functions ───────────────────────────────────────────
+const windows = {
+  hanning:  (n, N) => 0.5 * (1 - Math.cos(2*Math.PI*n/(N-1))),
+  rect:     (n, N) => 1.0,
+  blackman: (n, N) => 0.42 - 0.5*Math.cos(2*Math.PI*n/(N-1)) + 0.08*Math.cos(4*Math.PI*n/(N-1)),
+  hamming:  (n, N) => 0.54 - 0.46*Math.cos(2*Math.PI*n/(N-1)),
+};
+
+const winColors = { hanning:'#ffa657', rect:'#f85149', blackman:'#bc8cff', hamming:'#79c0ff' };
+
+// ── Build signal ───────────────────────────────────────────────
+function buildSignal(f0, cycles, scale, winType) {
+  const N    = Math.round(cycles * FS / f0); // samples in burst
+  const winFn = windows[winType] || windows.hanning;
+
+  const sig = new Float64Array(N);
+  const env = new Float64Array(N);
+  const car = new Float64Array(N);
+
+  for (let n = 0; n < N; n++) {
+    const t  = n / FS;
+    env[n]   = winFn(n, N);
+    car[n]   = Math.sin(2 * Math.PI * f0 * t);
+    sig[n]   = scale * 32767 * env[n] * car[n];
+  }
+  return { sig, env, car, N };
+}
+
+// ── Compute FFT spectrum ───────────────────────────────────────
+const NFFT = 8192;
+
+function computeFFT(sig) {
+  const re = new Float64Array(NFFT);
+  const im = new Float64Array(NFFT);
+  // Zero-pad
+  for (let i = 0; i < Math.min(sig.length, NFFT); i++) re[i] = sig[i];
+  fft(re, im);
+  const mag = new Float64Array(NFFT / 2);
+  for (let i = 0; i < NFFT / 2; i++) {
+    const m = Math.sqrt(re[i]*re[i] + im[i]*im[i]) / (NFFT / 2);
+    mag[i] = m > 1e-12 ? 20 * Math.log10(m) : -120;
+  }
+  return mag; // dB
+}
+
+// ── Canvas helpers ─────────────────────────────────────────────
+function setupCanvas(id) {
+  const c = document.getElementById(id);
+  const dpr = window.devicePixelRatio || 1;
+  const W = c.offsetWidth, H = c.offsetHeight;
+  c.width = W * dpr; c.height = H * dpr;
+  const ctx = c.getContext('2d');
+  ctx.scale(dpr, dpr);
+  return { ctx, W, H };
+}
+
+function drawGrid(ctx, W, H, xTicks, yTicks, xLabel, yLabel) {
+  ctx.strokeStyle = '#1c2430'; ctx.lineWidth = 1;
+  yTicks.forEach(({ v, label }) => {
+    const y = v;
+    ctx.beginPath(); ctx.moveTo(50, y); ctx.lineTo(W - 10, y); ctx.stroke();
+    ctx.fillStyle = '#8b949e'; ctx.font = '10px Courier New';
+    ctx.textAlign = 'right'; ctx.fillText(label, 46, y + 4);
+  });
+  xTicks.forEach(({ v, label }) => {
+    const x = v;
+    ctx.beginPath(); ctx.moveTo(x, 10); ctx.lineTo(x, H - 28); ctx.stroke();
+    ctx.fillStyle = '#8b949e'; ctx.font = '10px Courier New';
+    ctx.textAlign = 'center'; ctx.fillText(label, x, H - 14);
+  });
+  // Axis labels
+  ctx.save(); ctx.translate(12, H/2); ctx.rotate(-Math.PI/2);
+  ctx.textAlign = 'center'; ctx.fillStyle = '#8b949e'; ctx.font = '10px sans-serif';
+  ctx.fillText(yLabel, 0, 0); ctx.restore();
+  ctx.textAlign = 'center'; ctx.fillStyle = '#8b949e'; ctx.font = '10px sans-serif';
+  ctx.fillText(xLabel, W/2, H - 2);
+}
+
+// ── Draw Time Domain ───────────────────────────────────────────
+function drawTime(f0, cycles, scale, winType) {
+  const { ctx, W, H } = setupCanvas('cTime');
+  ctx.clearRect(0, 0, W, H);
+
+  const { sig, env, car, N } = buildSignal(f0, cycles, scale, winType);
+  const durMs = N / FS * 1000;
+  const PAD = { l: 54, r: 16, t: 16, b: 32 };
+  const PW = W - PAD.l - PAD.r, PH = H - PAD.t - PAD.b;
+  const maxAmp = 32767;
+
+  // Ticks
+  const yTicks = [-1, -0.5, 0, 0.5, 1].map(v => ({
+    v: PAD.t + PH * (1 - (v + 1) / 2),
+    label: v === 0 ? '0' : (v > 0 ? '+' : '') + v.toFixed(1)
+  }));
+  const xTickCount = Math.min(10, Math.ceil(durMs) + 1);
+  const xTicks = Array.from({ length: xTickCount + 1 }, (_, i) => ({
+    v: PAD.l + PW * i / xTickCount,
+    label: (durMs * i / xTickCount).toFixed(1) + ''
+  }));
+  drawGrid(ctx, W, H, xTicks, yTicks, 'Waktu (ms)', 'Amplitudo (norm.)');
+
+  const toX = i => PAD.l + PW * i / N;
+  const toY = v => PAD.t + PH * (1 - (v / maxAmp + 1) / 2);
+  const toYn = v => PAD.t + PH * (1 - (v + 1) / 2);
+
+  // Shaded region under envelope
+  const envColor = winColors[winType] || '#ffa657';
+  ctx.fillStyle = `${envColor}18`;
+  ctx.beginPath();
+  ctx.moveTo(toX(0), toYn(0));
+  for (let i = 0; i < N; i++) ctx.lineTo(toX(i), toYn(env[i]));
+  ctx.lineTo(toX(N-1), toYn(0));
+  ctx.fill();
+
+  // Carrier (dim)
+  ctx.strokeStyle = 'rgba(88,166,255,0.25)'; ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  for (let i = 0; i < N; i++) {
+    const x = toX(i), y = toY(scale * 32767 * car[i]);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.stroke(); ctx.setLineDash([]);
+
+  // Tone burst (main signal)
+  ctx.strokeStyle = '#3fb950'; ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = 0; i < N; i++) {
+    const x = toX(i), y = toY(sig[i]);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // Envelope
+  ctx.strokeStyle = envColor; ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (let i = 0; i < N; i++) {
+    const x = toX(i), y = toYn(env[i]);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  // Negative envelope
+  ctx.beginPath();
+  for (let i = 0; i < N; i++) {
+    const x = toX(i), y = toYn(-env[i]);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // Zero line
+  ctx.strokeStyle = 'rgba(139,148,158,0.4)'; ctx.lineWidth = 1; ctx.setLineDash([3,3]);
+  ctx.beginPath(); ctx.moveTo(PAD.l, toYn(0)); ctx.lineTo(W - PAD.r, toYn(0)); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Annotation
+  ctx.fillStyle = 'rgba(13,17,23,0.75)';
+  ctx.fillRect(PAD.l + 6, PAD.t + 6, 180, 56);
+  ctx.strokeStyle = '#30363d'; ctx.lineWidth = 1;
+  ctx.strokeRect(PAD.l + 6, PAD.t + 6, 180, 56);
+  ctx.fillStyle = '#e6edf3'; ctx.font = 'bold 11px Courier New'; ctx.textAlign = 'left';
+  ctx.fillText(`f₀  = ${f0} Hz`, PAD.l + 14, PAD.t + 22);
+  ctx.fillText(`T   = ${durMs.toFixed(2)} ms`, PAD.l + 14, PAD.t + 37);
+  ctx.fillText(`N   = ${N} samples @ ${(FS/1000).toFixed(0)}kSPS`, PAD.l + 14, PAD.t + 52);
+
+  // Update info cards
+  document.getElementById('vF0').textContent  = f0 + ' Hz';
+  document.getElementById('vDur').textContent = durMs.toFixed(2) + ' ms';
+  document.getElementById('vNsamp').textContent = N;
+  document.getElementById('vAmp').textContent = Math.round(scale * 32767);
+}
+
+// ── Draw FFT ───────────────────────────────────────────────────
+function drawFFT(f0, cycles, scale, winType, fftScale) {
+  const { ctx, W, H } = setupCanvas('cFFT');
+  ctx.clearRect(0, 0, W, H);
+
+  const { sig } = buildSignal(f0, cycles, scale, winType);
+  const mag = computeFFT(sig);
+  const freqRes = FS / NFFT; // Hz per bin
+
+  const PAD = { l: 50, r: 12, t: 16, b: 32 };
+  const PW = W - PAD.l - PAD.r, PH = H - PAD.t - PAD.b;
+  const maxHz = Math.min(FS / 2, f0 * 5 + 2000);
+  const minDB = -80, maxDB = 10;
+
+  const toX = hz => {
+    if (fftScale === 'log') {
+      const minHz_log = 10;
+      return PAD.l + PW * (Math.log10(Math.max(minHz_log, hz)) - Math.log10(minHz_log)) /
+             (Math.log10(maxHz) - Math.log10(minHz_log));
+    }
+    return PAD.l + PW * hz / maxHz;
+  };
+  const toY = db => PAD.t + PH * (1 - (db - minDB) / (maxDB - minDB));
+
+  // Grid
+  const dbTicks = [-80,-60,-40,-20,-10,-3,0].map(d => ({
+    v: toY(d), label: d === 0 ? '0dB' : d + ''
+  }));
+  const hzTickVals = fftScale === 'log'
+    ? [10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000].filter(h => h <= maxHz)
+    : Array.from({length:6},(_,i) => Math.round(maxHz * i / 5));
+  const xTicks = hzTickVals.map(h => ({
+    v: toX(h),
+    label: h >= 1000 ? (h/1000)+'k' : h+''
+  }));
+  drawGrid(ctx, W, H, xTicks, dbTicks, 'Frekuensi (Hz)', 'Magnitudo (dB)');
+
+  // Passband shading (around f0)
+  const halfBW = freqRes * 3;
+  ctx.fillStyle = 'rgba(63,185,80,0.07)';
+  ctx.fillRect(toX(f0-halfBW*5), PAD.t, toX(f0+halfBW*5) - toX(f0-halfBW*5), PH);
+
+  // Spectrum
+  ctx.strokeStyle = '#79c0ff'; ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  let first = true;
+  for (let i = 1; i < NFFT/2; i++) {
+    const hz = i * freqRes;
+    if (hz > maxHz) break;
+    const x = toX(hz), y = toY(mag[i]);
+    if (y < PAD.t || y > PAD.t + PH) { first = true; continue; }
+    first ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    first = false;
+  }
+  ctx.stroke();
+
+  // Peak marker
+  let peakIdx = 0, peakVal = -200;
+  for (let i = 1; i < NFFT/2; i++) if (mag[i] > peakVal) { peakVal = mag[i]; peakIdx = i; }
+  const peakHz = peakIdx * freqRes;
+  const px = toX(peakHz), py = toY(peakVal);
+
+  ctx.fillStyle = '#d29922';
+  ctx.beginPath(); ctx.arc(px, py, 4, 0, 2*Math.PI); ctx.fill();
+  ctx.fillStyle = 'rgba(13,17,23,0.85)';
+  ctx.fillRect(px + 6, py - 16, 90, 18);
+  ctx.fillStyle = '#d29922'; ctx.font = 'bold 10px Courier New'; ctx.textAlign = 'left';
+  ctx.fillText(`${Math.round(peakHz)} Hz  ${peakVal.toFixed(1)}dB`, px + 10, py - 4);
+
+  // −3dB line
+  const db3 = peakVal - 3;
+  const y3 = toY(db3);
+  ctx.strokeStyle = 'rgba(248,81,73,0.5)'; ctx.lineWidth = 1; ctx.setLineDash([4,4]);
+  ctx.beginPath(); ctx.moveTo(PAD.l, y3); ctx.lineTo(W-PAD.r, y3); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = 'rgba(248,81,73,0.8)'; ctx.font = '10px Courier New'; ctx.textAlign = 'left';
+  ctx.fillText('−3dB', W - PAD.r - 34, y3 - 3);
+
+  // Find −3dB BW
+  const thresh = peakVal - 3;
+  let lo3 = 0, hi3 = 0;
+  for (let i = peakIdx; i >= 1; i--) if (mag[i] < thresh) { lo3 = i * freqRes; break; }
+  for (let i = peakIdx; i < NFFT/2; i++) if (mag[i] < thresh) { hi3 = i * freqRes; break; }
+  const bw = hi3 > lo3 ? (hi3 - lo3).toFixed(0) : '—';
+  document.getElementById('vBW').textContent = bw + ' Hz';
+  document.getElementById('vPeak').textContent = Math.round(peakHz) + ' Hz';
+}
+
+// ── Redraw all ─────────────────────────────────────────────────
+function redraw() {
+  const f0     = parseInt(document.getElementById('selFreq').value);
+  const cycles = parseInt(document.getElementById('selCycles').value);
+  const scale  = parseFloat(document.getElementById('selDb').value);
+  const win    = document.getElementById('selWin').value;
+  const fftS   = document.getElementById('selFftScale').value;
+
+  const dbLabel = document.getElementById('selDb');
+  document.getElementById('statDb') && (document.getElementById('statDb').textContent = dbLabel.options[dbLabel.selectedIndex].text);
+
+  drawTime(f0, cycles, scale, win);
+  drawFFT (f0, cycles, scale, win, fftS);
+}
+
+['selFreq','selCycles','selDb','selWin','selFftScale'].forEach(id =>
+  document.getElementById(id).addEventListener('change', redraw));
+
+window.addEventListener('resize', redraw);
+redraw();
+</script>
+</body>
+</html>

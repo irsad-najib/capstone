@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard ABR — SonicNeuro Diagnostic</title>
+<style>
+:root{
+  --bg:#0d1117;--panel:#161b22;--border:#30363d;--text:#e6edf3;--muted:#8b949e;
+  --accent:#58a6ff;--green:#3fb950;--yellow:#d29922;--red:#f85149;
+  --orange:#ffa657;--purple:#bc8cff;--teal:#39d0d8;--sidebar:#0d1117;
+  --mono:'Courier New',monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px;height:100vh;overflow:hidden;display:flex}
+
+/* ── Sidebar ── */
+.sidebar{width:220px;min-width:220px;background:#0a0e14;border-right:1px solid var(--border);display:flex;flex-direction:column;padding:0}
+.sidebar-logo{padding:16px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
+.sidebar-logo .brand{font-size:13px;font-weight:800;background:linear-gradient(135deg,var(--teal),var(--accent));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.sidebar-logo .sub{font-size:9px;color:var(--muted);margin-top:1px}
+.sidebar-nav{flex:1;padding:10px 0;overflow-y:auto}
+.nav-section{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;padding:8px 18px 4px}
+.nav-item{display:flex;align-items:center;gap:10px;padding:8px 18px;cursor:pointer;color:var(--muted);font-size:12px;transition:all .15s;border-left:3px solid transparent}
+.nav-item:hover{background:rgba(255,255,255,.04);color:var(--text)}
+.nav-item.active{background:rgba(88,166,255,.08);color:var(--accent);border-left-color:var(--accent)}
+.nav-icon{font-size:15px}
+.sidebar-footer{padding:14px 18px;border-top:1px solid var(--border)}
+.device-chip{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--panel);border:1px solid var(--border);border-radius:8px}
+.device-dot{width:7px;height:7px;border-radius:50%}
+.device-dot.on{background:var(--green);box-shadow:0 0 6px var(--green);animation:pulse 1.5s infinite}
+.device-dot.off{background:var(--muted)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* ── Main ── */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+
+/* ── Top bar ── */
+.topbar{height:52px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;padding:0 20px;background:var(--panel);flex-shrink:0}
+.topbar-title{font-weight:700;font-size:14px}
+.status-chip{display:flex;align-items:center;gap:6px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600}
+.sc-live{background:rgba(63,185,80,.15);border:1px solid rgba(63,185,80,.4);color:var(--green)}
+.sc-sim{background:rgba(255,166,87,.15);border:1px solid rgba(255,166,87,.4);color:var(--orange)}
+.sc-offline{background:rgba(248,81,73,.1);border:1px solid rgba(248,81,73,.3);color:var(--red)}
+.topbar-right{margin-left:auto;display:flex;gap:10px;align-items:center}
+.stat-pill{background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:11px;font-family:var(--mono)}
+.stat-pill b{color:var(--accent)}
+
+/* ── Content area ── */
+.content{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px}
+
+/* ── Tabs ── */
+.tabs{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:0}
+.tab{padding:7px 16px;font-size:12px;font-weight:600;cursor:pointer;color:var(--muted);border-bottom:2px solid transparent;transition:all .15s}
+.tab:hover{color:var(--text)}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+
+/* ── Panels ── */
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.grid-3{display:grid;grid-template-columns:2fr 1fr 1fr;gap:12px}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.card-header{padding:8px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.02)}
+.card-title{font-weight:700;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+canvas.ch{display:block;width:100%;background:#0a0e14}
+
+/* ── Metric cards ── */
+.metric-card{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:12px 16px}
+.mc-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
+.mc-value{font-family:var(--mono);font-size:22px;font-weight:700;margin-bottom:4px}
+.mc-sub{font-size:10px;color:var(--muted)}
+
+/* ── ABR waveform card ── */
+.wave-row{display:grid;grid-template-columns:80px 1fr 60px;align-items:center;gap:8px;padding:4px 10px;border-radius:4px}
+.wave-row:hover{background:rgba(255,255,255,.03)}
+.wr-label{font-size:11px;color:var(--muted);font-family:var(--mono)}
+.wr-bar{height:24px;position:relative;overflow:hidden;border-radius:3px;background:rgba(255,255,255,.03)}
+.wr-canvas{position:absolute;inset:0;width:100%;height:100%}
+.wr-snr{font-size:11px;font-family:var(--mono);text-align:right}
+
+/* ── Alert ── */
+.alert{background:rgba(88,166,255,.07);border:1px solid rgba(88,166,255,.2);border-radius:8px;padding:10px 14px;font-size:11.5px;color:var(--muted);display:flex;gap:10px;align-items:center}
+.alert b{color:var(--text)}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+
+/* ── Backend config ── */
+.config-row{display:flex;gap:8px;align-items:center}
+input[type=text]{padding:4px 8px;background:#21262d;border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;font-family:var(--mono);width:180px}
+button.btn{padding:4px 12px;border-radius:6px;border:1px solid var(--border);background:#21262d;color:var(--text);font-size:12px;cursor:pointer;font-weight:600}
+button.btn:hover{background:#30363d}
+button.btn-blue{background:rgba(88,166,255,.15);border-color:var(--accent);color:var(--accent)}
+
+/* ── Tab content ── */
+.tab-content{display:none}.tab-content.active{display:flex;flex-direction:column;gap:12px}
+</style>
+</head>
+<body>
+
+<!-- ── Sidebar ── -->
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div>
+      <div class="brand">SonicNeuro</div>
+      <div class="sub">ABR Diagnostic System v1.0</div>
+    </div>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-section">Monitoring</div>
+    <div class="nav-item active" onclick="switchTab('abr')">
+      <span class="nav-icon">🧠</span> ABR Real-time
+    </div>
+    <div class="nav-item" onclick="switchTab('raw')">
+      <span class="nav-icon">📈</span> Raw Waveform
+    </div>
+    <div class="nav-item" onclick="switchTab('frames')">
+      <span class="nav-icon">📡</span> Frame Log
+    </div>
+    <div class="nav-section">Analysis</div>
+    <div class="nav-item" onclick="switchTab('snr')">
+      <span class="nav-icon">📊</span> SNR Progression
+    </div>
+    <div class="nav-item">
+      <span class="nav-icon">💾</span> Export Session
+    </div>
+    <div class="nav-section">System</div>
+    <div class="nav-item" onclick="switchTab('settings')">
+      <span class="nav-icon">⚙️</span> Pengaturan
+    </div>
+  </nav>
+  <div class="sidebar-footer">
+    <div class="device-chip">
+      <div class="device-dot" id="devDot"></div>
+      <div>
+        <div style="font-size:11px;font-weight:700;font-family:var(--mono)" id="devName">esp32-abr-001</div>
+        <div style="font-size:10px;color:var(--muted)" id="devStatus">Offline</div>
+      </div>
+    </div>
+  </div>
+</aside>
+
+<!-- ── Main ── -->
+<div class="main">
+  <!-- Topbar -->
+  <div class="topbar">
+    <div class="topbar-title" id="topTitle">ABR Real-time Monitor</div>
+    <div class="status-chip sc-sim" id="statusChip">
+      <div class="device-dot" style="width:6px;height:6px;background:var(--orange);border-radius:50%"></div>
+      Mode Simulasi
+    </div>
+    <div class="topbar-right">
+      <div class="stat-pill">SPS: <b id="tSPS">860</b></div>
+      <div class="stat-pill">Trials: <b id="tTrials">0</b></div>
+      <div class="stat-pill">Stim: <b id="tStims">0</b></div>
+      <div class="stat-pill">Backend: <b id="tBackend" style="color:var(--orange)">Offline</b></div>
+      <button class="btn btn-blue" id="btnConnect">🔌 Sambung Backend</button>
+    </div>
+  </div>
+
+  <!-- Content -->
+  <div class="content">
+
+    <!-- ── TAB: ABR ── -->
+    <div class="tab-content active" id="tab-abr">
+
+      <!-- Alert -->
+      <div class="alert" id="alertBox">
+        <span>📡</span>
+        <span><b>Mode Simulasi Aktif.</b> Backend Go tidak terdeteksi di <span id="alertAddr" style="font-family:var(--mono);color:var(--accent)">http://localhost:8080</span>.
+        Semua data adalah sinyal simulasi. Tekan <b>🔌 Sambung Backend</b> untuk koneksi nyata via SSE.</span>
+      </div>
+
+      <!-- Metrics row -->
+      <div class="grid-3">
+        <div class="metric-card">
+          <div class="mc-label">Trial ABR</div>
+          <div class="mc-value" id="mTrials" style="color:var(--purple)">0</div>
+          <div class="mc-sub">Target: 500 (konvergen)</div>
+          <div style="margin-top:8px;height:4px;background:var(--border);border-radius:2px;overflow:hidden">
+            <div id="convBar" style="height:100%;background:linear-gradient(90deg,var(--purple),var(--accent));border-radius:2px;width:0%;transition:width .3s"></div>
+          </div>
+        </div>
+        <div class="metric-card">
+          <div class="mc-label">SNR Channel 0</div>
+          <div class="mc-value" id="mSNR" style="color:var(--green)">—</div>
+          <div class="mc-sub" id="mQuality">Noise</div>
+        </div>
+        <div class="metric-card">
+          <div class="mc-label">Level Stimulus</div>
+          <div class="mc-value" id="mDB" style="color:var(--yellow)">80 dB</div>
+          <div class="mc-sub">~11 klik/dtk via PCM5102A</div>
+        </div>
+      </div>
+
+      <!-- ABR waveform -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">🧠 Rata-rata ABR — Running Average (Ch0)</span>
+          <span style="font-size:11px;color:var(--muted);margin-left:auto">Epoch 50ms | Bandpass 100–408 Hz</span>
+          <div style="margin-left:10px;display:flex;gap:8px;font-size:10px;align-items:center">
+            <span style="color:var(--purple)">— ABR avg</span>
+            <span style="color:rgba(139,148,158,0.5)">— Noise</span>
+          </div>
+        </div>
+        <canvas class="ch" id="cABR" height="200"></canvas>
+      </div>
+
+      <!-- SNR progression mini -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">📊 SNR vs Trial (real-time)</span>
+          <span style="font-size:10px;color:var(--muted);margin-left:auto">Teoritis: SNR ∝ √N</span>
+        </div>
+        <canvas class="ch" id="cSNRprog" height="120"></canvas>
+      </div>
+
+    </div>
+
+    <!-- ── TAB: Raw Waveform ── -->
+    <div class="tab-content" id="tab-raw">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">📈 Raw ADC — ADS1115 Ch0 (mV)</span>
+          <span style="font-size:11px;color:var(--muted);margin-left:auto">Window 500ms | 860 SPS</span>
+          <div style="margin-left:10px;display:flex;gap:10px;font-size:11px;align-items:center">
+            <span style="color:var(--green)">— Signal</span>
+            <span style="color:var(--yellow)">▏ Stimulus</span>
+          </div>
+        </div>
+        <canvas class="ch" id="cRaw" height="260"></canvas>
+      </div>
+      <div class="grid-2">
+        <div class="metric-card">
+          <div class="mc-label">Raw saat ini</div>
+          <div class="mc-value" id="mRawNow" style="color:var(--green)">—</div>
+          <div class="mc-sub">int16 ADS1115</div>
+        </div>
+        <div class="metric-card">
+          <div class="mc-label">mV saat ini</div>
+          <div class="mc-value" id="mMvNow" style="color:var(--accent)">—</div>
+          <div class="mc-sub">raw × 0.125 mV/LSB</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── TAB: Frame Log ── -->
+    <div class="tab-content" id="tab-frames">
+      <div class="card" style="flex:1">
+        <div class="card-header">
+          <span class="card-title">📡 Frame JSON WebSocket</span>
+          <span style="font-size:11px;color:var(--muted);margin-left:auto">Format: {"t":ms,"r":raw,"s":0|1}</span>
+          <div style="margin-left:10px;display:flex;gap:8px;font-size:10px">
+            <span style="background:rgba(210,153,34,.2);padding:1px 6px;border-radius:3px;color:var(--yellow)">🔔 s=1 (stimulus)</span>
+          </div>
+        </div>
+        <div id="frameLogDiv" style="height:500px;overflow-y:auto;padding:8px;font-family:var(--mono);font-size:11px;display:flex;flex-direction:column;gap:3px"></div>
+      </div>
+    </div>
+
+    <!-- ── TAB: SNR ── -->
+    <div class="tab-content" id="tab-snr">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">📊 SNR Progression — Simulasi vs Teoritis √N</span>
+        </div>
+        <canvas class="ch" id="cSNRFull" height="300"></canvas>
+      </div>
+    </div>
+
+    <!-- ── TAB: Settings ── -->
+    <div class="tab-content" id="tab-settings">
+      <div class="card">
+        <div class="card-header"><span class="card-title">⚙️ Koneksi Backend</span></div>
+        <div style="padding:16px;display:flex;flex-direction:column;gap:12px">
+          <div class="config-row">
+            <label style="color:var(--muted);font-size:11px;width:100px">Backend URL</label>
+            <input type="text" id="cfgUrl" value="http://localhost:8080">
+            <button class="btn btn-blue" id="btnTryConnect">🔌 Test & Sambung</button>
+            <span id="cfgStatus" style="font-size:11px;color:var(--muted)"></span>
+          </div>
+          <div class="config-row">
+            <label style="color:var(--muted);font-size:11px;width:100px">Device ID</label>
+            <input type="text" id="cfgDevice" value="esp32-abr-001">
+          </div>
+          <div class="config-row">
+            <label style="color:var(--muted);font-size:11px;width:100px">dB Level</label>
+            <select id="cfgDb" style="padding:4px 8px;background:#21262d;border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px">
+              <option value="60">60 dB</option>
+              <option value="70">70 dB</option>
+              <option value="80" selected>80 dB</option>
+              <option value="90">90 dB</option>
+            </select>
+            <button class="btn" id="btnSetDb">Kirim ke ESP32</button>
+          </div>
+          <div style="border-top:1px solid var(--border);padding-top:12px;font-size:11px;color:var(--muted)">
+            <b style="color:var(--text)">Endpoint backend yang digunakan:</b><br><br>
+            <code style="color:var(--accent)">GET /api/v1/health</code> — health check<br>
+            <code style="color:var(--accent)">GET /api/v1/raw/stream</code> — SSE raw waveform<br>
+            <code style="color:var(--accent)">GET /api/v1/abr/stream</code> — SSE ABR average<br>
+            <code style="color:var(--accent)">GET /api/v1/devices</code> — daftar perangkat<br>
+            <code style="color:var(--accent)">POST /api/v1/stim/set</code> — set level dB<br>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────────
+// GLOBALS
+// ─────────────────────────────────────────────────
+const FS = 860, EPOCH_MS = 50, WAVE_WIN_MS = 500;
+const WAVE_SAMPLES = Math.round(FS * WAVE_WIN_MS / 1000);
+const EPOCH_SAMPLES = Math.round(FS * EPOCH_MS / 1000);
+
+let backendUrl = 'http://localhost:8080';
+let backendOnline = false;
+let rawSse = null, abrSse = null;
+
+// Simulation state
+let waveBuf   = new Float64Array(WAVE_SAMPLES);
+let waveStim  = new Uint8Array(WAVE_SAMPLES);
+let waveHead  = 0;
+let abrAvg    = new Float64Array(EPOCH_SAMPLES);
+let trialCount = 0, stimCount = 0;
+let snrHistory = [];
+let frames = [];
+let simMs = 0, lastStimMs = 0, lastTickTime = performance.now();
+let sigNoise = 0, sigT = 0, sigLastStim = -9999;
+const dbScales = {60:.3,70:.55,80:1,90:1.6};
+let dbLevel = 80;
+let simRunning = true;
+
+// ABR waves
+function abrWaveDef(db) {
+  const s = dbScales[db]||1;
+  return [
+    {d:4,  a:.18*s, w:1.8},
+    {d:12, a:.12*s, w:2.5},
+    {d:20, a:.28*s, w:3.5},
+    {d:28, a:.08*s, w:2.5},
+  ];
+}
+
+let epochBuf = [], inEpoch = false;
+
+function genSample(isStim) {
+  sigNoise += (Math.random()-.5)*.035; sigNoise *= .988;
+  const plf  = Math.sin(2*Math.PI*50*sigT/FS)*.012;
+  const alpha = Math.sin(2*Math.PI*10*sigT/FS)*.06*Math.max(0,Math.sin(2*Math.PI*.4*sigT/FS));
+  if (isStim) sigLastStim = sigT;
+  const waves = abrWaveDef(dbLevel);
+  let abr = 0;
+  const age = sigT - sigLastStim;
+  const pol = stimCount%2===0?1:-1;
+  if (age>=0&&age<60) for (const w of waves){ const dt=age-w.d; abr+=pol*w.a*Math.exp(-dt*dt/(2*w.w*w.w)); }
+  sigT++;
+  return (sigNoise+plf+alpha+abr)*(4096/32768)*1000; // mV
+}
+
+// ─────────────────────────────────────────────────
+// CANVAS HELPER
+// ─────────────────────────────────────────────────
+function setupCanvas(id) {
+  const c = document.getElementById(id);
+  if (!c) return null;
+  const dpr = window.devicePixelRatio||1;
+  c.width = c.offsetWidth*dpr; c.height = c.offsetHeight*dpr;
+  const ctx = c.getContext('2d'); ctx.scale(dpr,dpr);
+  return { ctx, W:c.offsetWidth, H:c.offsetHeight };
+}
+
+// ─────────────────────────────────────────────────
+// DRAW: Raw Waveform
+// ─────────────────────────────────────────────────
+function drawRaw() {
+  const r = setupCanvas('cRaw'); if (!r) return;
+  const {ctx,W,H} = r;
+  ctx.clearRect(0,0,W,H);
+  const PAD={l:46,r:10,t:12,b:22};
+  const PW=W-PAD.l-PAD.r, PH=H-PAD.t-PAD.b;
+  const SCALE=.6, mid=PAD.t+PH/2;
+
+  // Grid
+  ctx.strokeStyle='#1c2430'; ctx.lineWidth=1;
+  [-SCALE,-SCALE/2,0,SCALE/2,SCALE].forEach(v=>{
+    const y=mid-(v/SCALE)*PH/2;
+    ctx.beginPath();ctx.moveTo(PAD.l,y);ctx.lineTo(W-PAD.r,y);ctx.stroke();
+    ctx.fillStyle='#8b949e';ctx.font='9px Courier New';ctx.textAlign='right';
+    ctx.fillText((v===0?'0':(v>0?'+':'')+v.toFixed(1))+'mV',PAD.l-2,y+3);
+  });
+  [0,100,200,300,400,500].forEach(ms=>{
+    const x=PAD.l+PW*(1-ms/WAVE_WIN_MS);
+    ctx.beginPath();ctx.moveTo(x,PAD.t);ctx.lineTo(x,H-PAD.b);ctx.stroke();
+    ctx.fillStyle='#8b949e';ctx.font='9px Courier New';ctx.textAlign='center';
+    ctx.fillText(ms===0?'now':'-'+ms+'ms',x,H-PAD.b+12);
+  });
+
+  // Stim markers
+  for (let i=0;i<WAVE_SAMPLES;i++){
+    const idx=(waveHead+i)%WAVE_SAMPLES;
+    if (waveStim[idx]){
+      const x=PAD.l+PW*i/WAVE_SAMPLES;
+      ctx.strokeStyle='rgba(210,153,34,.7)';ctx.lineWidth=1.5;ctx.setLineDash([3,3]);
+      ctx.beginPath();ctx.moveTo(x,PAD.t);ctx.lineTo(x,H-PAD.b);ctx.stroke();ctx.setLineDash([]);
+      ctx.fillStyle='#d29922';ctx.font='bold 9px mono';ctx.textAlign='center';ctx.fillText('S',x,PAD.t+9);
+    }
+  }
+  // Waveform
+  ctx.strokeStyle='#3fb950';ctx.lineWidth=1.5;ctx.setLineDash([]);
+  ctx.beginPath();let first=true;
+  for(let i=0;i<WAVE_SAMPLES;i++){
+    const idx=(waveHead+i)%WAVE_SAMPLES;
+    const x=PAD.l+PW*i/WAVE_SAMPLES;
+    const y=Math.max(PAD.t,Math.min(PAD.t+PH,mid-(waveBuf[idx]/SCALE)*PH/2));
+    first?ctx.moveTo(x,y):ctx.lineTo(x,y);first=false;
+  }
+  ctx.stroke();
+  // Zero
+  ctx.strokeStyle='rgba(139,148,158,.2)';ctx.lineWidth=1;ctx.setLineDash([3,4]);
+  ctx.beginPath();ctx.moveTo(PAD.l,mid);ctx.lineTo(W-PAD.r,mid);ctx.stroke();ctx.setLineDash([]);
+}
+
+// ─────────────────────────────────────────────────
+// DRAW: ABR Average
+// ─────────────────────────────────────────────────
+function drawABR() {
+  const r = setupCanvas('cABR'); if (!r) return;
+  const {ctx,W,H} = r;
+  ctx.clearRect(0,0,W,H);
+  if (trialCount===0){
+    ctx.fillStyle='#8b949e';ctx.font='12px sans-serif';ctx.textAlign='center';
+    ctx.fillText('Menunggu trials ABR…',W/2,H/2); return;
+  }
+  const PAD={l:48,r:12,t:14,b:26};
+  const PW=W-PAD.l-PAD.r,PH=H-PAD.t-PAD.b,SCALE=.3,mid=PAD.t+PH/2;
+
+  ctx.strokeStyle='#1c2430';ctx.lineWidth=1;
+  [-SCALE,-SCALE/2,0,SCALE/2,SCALE].forEach(v=>{
+    const y=mid-(v/SCALE)*PH/2;
+    ctx.beginPath();ctx.moveTo(PAD.l,y);ctx.lineTo(W-PAD.r,y);ctx.stroke();
+    ctx.fillStyle='#8b949e';ctx.font='10px Courier New';ctx.textAlign='right';
+    ctx.fillText((v>0?'+':'')+v.toFixed(2)+'mV',PAD.l-2,y+4);
+  });
+  [0,10,20,30,40,50].forEach(ms=>{
+    const x=PAD.l+PW*ms/EPOCH_MS;
+    ctx.beginPath();ctx.moveTo(x,PAD.t);ctx.lineTo(x,H-PAD.b);ctx.stroke();
+    ctx.fillStyle='#8b949e';ctx.font='10px Courier New';ctx.textAlign='center';
+    ctx.fillText(ms+'ms',x,H-PAD.b+14);
+  });
+
+  // Noise band
+  let noisePow=0;
+  for(let i=0;i<3&&i<EPOCH_SAMPLES;i++) noisePow+=abrAvg[i]*abrAvg[i];
+  const noiseRMS=Math.sqrt(noisePow/3);
+  ctx.fillStyle='rgba(139,148,158,.07)';
+  ctx.fillRect(PAD.l,mid-(noiseRMS/SCALE)*PH/2,PW,(noiseRMS/SCALE)*PH);
+
+  // ABR curve
+  ctx.strokeStyle='#bc8cff';ctx.lineWidth=2.5;
+  ctx.beginPath();let first=true;
+  for(let i=0;i<EPOCH_SAMPLES;i++){
+    const x=PAD.l+PW*i/EPOCH_SAMPLES;
+    const y=Math.max(PAD.t,Math.min(PAD.t+PH,mid-(abrAvg[i]/SCALE)*PH/2));
+    first?ctx.moveTo(x,y):ctx.lineTo(x,y);first=false;
+  }
+  ctx.stroke();
+
+  // Wave markers
+  const wMs=[4/FS*1000,12/FS*1000,20/FS*1000];
+  ['I','III','V'].forEach((lbl,wi)=>{
+    const x=PAD.l+PW*wMs[wi]/EPOCH_MS;
+    ctx.strokeStyle='rgba(188,140,255,.35)';ctx.lineWidth=1;ctx.setLineDash([3,3]);
+    ctx.beginPath();ctx.moveTo(x,PAD.t);ctx.lineTo(x,H-PAD.b);ctx.stroke();ctx.setLineDash([]);
+    ctx.fillStyle='rgba(188,140,255,.8)';ctx.font='bold 10px Courier New';ctx.textAlign='center';
+    ctx.fillText(lbl,x,PAD.t+11);
+  });
+  // Zero
+  ctx.strokeStyle='rgba(139,148,158,.25)';ctx.lineWidth=1;ctx.setLineDash([3,4]);
+  ctx.beginPath();ctx.moveTo(PAD.l,mid);ctx.lineTo(W-PAD.r,mid);ctx.stroke();ctx.setLineDash([]);
+
+  // SNR
+  let sig=0;
+  for(let i=3;i<28&&i<EPOCH_SAMPLES;i++) sig=Math.max(sig,Math.abs(abrAvg[i]));
+  const snr=noiseRMS>1e-10?20*Math.log10(sig/noiseRMS):-20;
+  const quality = trialCount>=500?'Konvergen':trialCount>=100?'Mulai Terbentuk':'Noise';
+  document.getElementById('mSNR').textContent = snr.toFixed(1)+' dB';
+  document.getElementById('mQuality').textContent = quality;
+  document.getElementById('mTrials').textContent = trialCount.toLocaleString();
+  document.getElementById('tTrials').textContent = trialCount.toLocaleString();
+  document.getElementById('convBar').style.width = Math.min(100,trialCount/5)+'%';
+
+  // SNR history
+  if (snrHistory.length===0||trialCount-snrHistory[snrHistory.length-1].n>5){
+    snrHistory.push({n:trialCount,snr});
+    if(snrHistory.length>200) snrHistory.shift();
+  }
+
+  // Info badge
+  ctx.fillStyle='rgba(13,17,23,.8)';ctx.fillRect(W-PAD.r-120,PAD.t+4,116,36);
+  ctx.strokeStyle='#30363d';ctx.lineWidth=1;ctx.strokeRect(W-PAD.r-120,PAD.t+4,116,36);
+  ctx.fillStyle='#bc8cff';ctx.font='bold 10.5px Courier New';ctx.textAlign='left';
+  ctx.fillText(`Trials: ${trialCount}`,W-PAD.r-114,PAD.t+18);
+  ctx.fillStyle='#8b949e';ctx.font='10px Courier New';
+  ctx.fillText(`SNR: ${snr.toFixed(1)} dB`,W-PAD.r-114,PAD.t+32);
+}
+
+// ─────────────────────────────────────────────────
+// DRAW: SNR Progression
+// ─────────────────────────────────────────────────
+function drawSNRProg(canvasId,H_override) {
+  const el = document.getElementById(canvasId); if(!el) return;
+  const dpr=window.devicePixelRatio||1;
+  el.width=el.offsetWidth*dpr; el.height=(H_override||el.offsetHeight)*dpr;
+  const ctx=el.getContext('2d'); ctx.scale(dpr,dpr);
+  const W=el.offsetWidth,H=H_override||el.offsetHeight;
+  ctx.clearRect(0,0,W,H);
+  if(snrHistory.length<2){
+    ctx.fillStyle='#8b949e';ctx.font='11px sans-serif';ctx.textAlign='center';
+    ctx.fillText('Menunggu data…',W/2,H/2); return;
+  }
+  const PAD={l:42,r:12,t:10,b:22};
+  const PW=W-PAD.l-PAD.r,PH=H-PAD.t-PAD.b;
+  const maxN=Math.max(100,trialCount);
+  const snrVals=snrHistory.map(d=>d.snr);
+  const snrMin=Math.min(...snrVals)-2;
+  const snrMax=Math.max(...snrVals)+2;
+
+  const toX=n=>PAD.l+PW*Math.log10(Math.max(1,n))/Math.log10(maxN);
+  const toY=v=>PAD.t+PH*(1-(v-snrMin)/(snrMax-snrMin));
+
+  // Grid
+  ctx.strokeStyle='#1c2430';ctx.lineWidth=1;
+  [1,2,5,10,20,50,100,200,500,1000].filter(n=>n<=maxN).forEach(n=>{
+    const x=toX(n);
+    ctx.beginPath();ctx.moveTo(x,PAD.t);ctx.lineTo(x,H-PAD.b);ctx.stroke();
+    ctx.fillStyle='#8b949e';ctx.font='9px Courier New';ctx.textAlign='center';
+    ctx.fillText(n>=1000?(n/1000)+'k':n+'',x,H-PAD.b+12);
+  });
+
+  // Theoretical
+  const c=snrHistory[snrHistory.length-1]?.snr - 10*Math.log10(Math.max(1,trialCount));
+  ctx.strokeStyle='rgba(248,81,73,.4)';ctx.lineWidth=1.5;ctx.setLineDash([5,4]);
+  ctx.beginPath();let f=true;
+  for(const {n} of snrHistory){
+    const th=10*Math.log10(Math.max(1,n))+(c||0);
+    const x=toX(n),y=Math.max(PAD.t,Math.min(PAD.t+PH,toY(th)));
+    f?ctx.moveTo(x,y):ctx.lineTo(x,y);f=false;
+  }
+  ctx.stroke();ctx.setLineDash([]);
+
+  // Simulation
+  ctx.strokeStyle='#3fb950';ctx.lineWidth=2;
+  ctx.beginPath();f=true;
+  for(const {n,snr} of snrHistory){
+    const x=toX(n),y=Math.max(PAD.t,Math.min(PAD.t+PH,toY(snr)));
+    f?ctx.moveTo(x,y):ctx.lineTo(x,y);f=false;
+  }
+  ctx.stroke();
+
+  // Labels
+  ctx.fillStyle='#8b949e';ctx.font='9px Courier New';ctx.textAlign='right';
+  ctx.fillText('dB',PAD.l-4,PAD.t+8);
+}
+
+// ─────────────────────────────────────────────────
+// FRAME LOG
+// ─────────────────────────────────────────────────
+let frameRows=[];
+function addFrame(raw,isStim,ts){
+  const log=document.getElementById('frameLogDiv');
+  if(!log) return;
+  if(frameRows.length>=60){const old=frameRows.shift();old.parentNode&&old.parentNode.removeChild(old);}
+  const mv=(raw*.125).toFixed(3);
+  const div=document.createElement('div');
+  div.style.cssText=`display:grid;grid-template-columns:50px 120px 1fr;gap:8px;padding:4px 8px;border-radius:4px;border:1px solid;animation:fadeIn .1s ease;${isStim?'background:rgba(210,153,34,.12);border-color:#d29922;':'background:rgba(88,166,255,.05);border-color:rgba(88,166,255,.12);'}`;
+  div.innerHTML=`<span style="color:#8b949e;font-size:10px">#${String(frameRows.length+1).padStart(4,'0')}</span>`+
+    `<span style="color:${parseFloat(mv)>=0?'#3fb950':'#f85149'}">${mv}mV ${isStim?'<span style="color:#d29922;font-weight:700">⚡S</span>':''}</span>`+
+    `<span style="color:${isStim?'#d29922':'#79c0ff'};font-size:10.5px">{"t":${ts},"r":${raw},"s":${isStim?1:0}}</span>`;
+  log.appendChild(div);frameRows.push(div);
+  log.scrollTop=log.scrollHeight;
+}
+
+// ─────────────────────────────────────────────────
+// SIMULATION TICK
+// ─────────────────────────────────────────────────
+function simTick() {
+  if (!simRunning||backendOnline) return;
+  const now=performance.now();
+  const dt=now-lastTickTime; lastTickTime=now;
+  const n=Math.round(FS/1000*dt);
+  for(let i=0;i<n;i++){
+    simMs+=1000/FS;
+    const isStim=(simMs-lastStimMs)>=91;
+    if(isStim){lastStimMs=simMs;stimCount++;document.getElementById('tStims').textContent=stimCount;}
+    const mv=genSample(isStim);
+    const raw=Math.round(mv/0.125);
+    waveBuf[waveHead]=mv;waveStim[waveHead]=isStim?1:0;waveHead=(waveHead+1)%WAVE_SAMPLES;
+    if(isStim){inEpoch=true;epochBuf=[];}
+    if(inEpoch){
+      epochBuf.push(mv);
+      if(epochBuf.length>=EPOCH_SAMPLES){
+        inEpoch=false;trialCount++;
+        const nn=trialCount;
+        for(let j=0;j<EPOCH_SAMPLES;j++) abrAvg[j]=(abrAvg[j]*(nn-1)+epochBuf[j])/nn;
+      }
+    }
+    // Frame log (throttled)
+    const ts=Math.round(simMs);
+    if(i===0||(isStim&&frames.length<500)){
+      addFrame(raw,isStim,ts);
+      frames.push({raw,isStim,ts});
+    }
+    document.getElementById('mRawNow').textContent=raw;
+    document.getElementById('mMvNow').textContent=(raw*.125).toFixed(3)+' mV';
+    document.getElementById('mRawNow').style.color=raw>=0?'var(--green)':'var(--red)';
+  }
+  requestAnimationFrame(()=>{
+    drawRaw(); drawABR();
+    drawSNRProg('cSNRprog',120);
+    drawSNRProg('cSNRFull',300);
+    simTick();
+  });
+}
+
+// ─────────────────────────────────────────────────
+// BACKEND SSE CONNECTION
+// ─────────────────────────────────────────────────
+async function tryConnect() {
+  const url = document.getElementById('cfgUrl').value.trim()||backendUrl;
+  backendUrl = url;
+  document.getElementById('alertAddr').textContent = url;
+  const st = document.getElementById('cfgStatus');
+  st.textContent = 'Menghubungkan…'; st.style.color='var(--yellow)';
+
+  try {
+    const resp = await fetch(url+'/api/v1/health',{signal:AbortSignal.timeout(3000)});
+    if (!resp.ok) throw new Error('HTTP '+resp.status);
+    const data = await resp.json();
+    backendOnline = true;
+    st.textContent = '✅ Terhubung — '+data.time;st.style.color='var(--green)';
+    updateDeviceStatus(true);
+    startSSE();
+  } catch(e) {
+    backendOnline = false;
+    st.textContent = '❌ Gagal: '+e.message;st.style.color='var(--red)';
+    updateDeviceStatus(false);
+  }
+}
+
+function startSSE() {
+  if (rawSse) rawSse.close();
+  if (abrSse) abrSse.close();
+
+  rawSse = new EventSource(backendUrl+'/api/v1/raw/stream');
+  rawSse.onmessage = e => {
+    try {
+      const d = JSON.parse(e.data);
+      if (d.samples&&d.samples[0]) {
+        const arr = d.samples[0];
+        arr.forEach(mv => {
+          waveBuf[waveHead] = mv;
+          waveStim[waveHead] = 0;
+          waveHead = (waveHead+1)%WAVE_SAMPLES;
+        });
+        drawRaw();
+      }
+    } catch(err) {}
+  };
+  rawSse.onerror = () => { backendOnline=false; updateDeviceStatus(false); };
+
+  abrSse = new EventSource(backendUrl+'/api/v1/abr/stream');
+  abrSse.onmessage = e => {
+    try {
+      const d = JSON.parse(e.data);
+      if (d.abr_average&&d.abr_average[0]) {
+        trialCount = d.trial_count||0;
+        const ch0 = d.abr_average[0];
+        for(let i=0;i<Math.min(ch0.length,EPOCH_SAMPLES);i++) abrAvg[i]=ch0[i];
+        drawABR(); drawSNRProg('cSNRprog',120); drawSNRProg('cSNRFull',300);
+      }
+    } catch(err) {}
+  };
+}
+
+async function sendDbLevel() {
+  const db = parseInt(document.getElementById('cfgDb').value);
+  if (!backendOnline) { alert('Backend tidak terhubung'); return; }
+  try {
+    await fetch(backendUrl+'/api/v1/stim/set',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({db})
+    });
+    document.getElementById('mDB').textContent=db+' dB';
+    dbLevel=db;
+  } catch(e) { alert('Gagal: '+e.message); }
+}
+
+function updateDeviceStatus(online) {
+  const dot=document.getElementById('devDot');
+  const devSt=document.getElementById('devStatus');
+  const chip=document.getElementById('statusChip');
+  const topBe=document.getElementById('tBackend');
+  const alert=document.getElementById('alertBox');
+  if(online){
+    dot.className='device-dot on';devSt.textContent='Connected';
+    chip.className='status-chip sc-live';chip.innerHTML='<div class="device-dot" style="width:6px;height:6px;background:var(--green);border-radius:50%;animation:pulse 1.5s infinite"></div> Live — Backend';
+    topBe.textContent='Online';topBe.style.color='var(--green)';
+    alert.style.display='none';
+    simRunning=false;
+  } else {
+    dot.className='device-dot off';devSt.textContent='Offline';
+    chip.className='status-chip sc-sim';chip.innerHTML='<div style="width:6px;height:6px;background:var(--orange);border-radius:50%"></div> Mode Simulasi';
+    topBe.textContent='Offline';topBe.style.color='var(--orange)';
+    alert.style.display='flex';
+    simRunning=true;lastTickTime=performance.now();simTick();
+  }
+}
+
+// ─────────────────────────────────────────────────
+// TAB SWITCHING
+// ─────────────────────────────────────────────────
+const tabTitles = {abr:'ABR Real-time Monitor',raw:'Raw Waveform — ADS1115',frames:'Frame Log WebSocket',snr:'SNR Progression',settings:'Pengaturan Koneksi'};
+function switchTab(name) {
+  document.querySelectorAll('.tab-content').forEach(el=>el.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(el=>el.classList.remove('active'));
+  const tc=document.getElementById('tab-'+name);
+  if(tc) tc.classList.add('active');
+  document.getElementById('topTitle').textContent=tabTitles[name]||name;
+  // Highlight nav
+  document.querySelectorAll('.nav-item').forEach(el=>{
+    if(el.getAttribute('onclick')===`switchTab('${name}')`) el.classList.add('active');
+  });
+  // Redraw canvases
+  setTimeout(()=>{ drawRaw(); drawABR(); drawSNRProg('cSNRprog',120); drawSNRProg('cSNRFull',300); }, 50);
+}
+
+// ─────────────────────────────────────────────────
+// EVENTS
+// ─────────────────────────────────────────────────
+document.getElementById('btnConnect').addEventListener('click',()=>switchTab('settings'));
+document.getElementById('btnTryConnect').addEventListener('click',tryConnect);
+document.getElementById('btnSetDb').addEventListener('click',sendDbLevel);
+window.addEventListener('resize',()=>{ drawRaw();drawABR();drawSNRProg('cSNRprog',120);drawSNRProg('cSNRFull',300); });
+
+// ─────────────────────────────────────────────────
+// INIT — auto-connect ke backend saat load
+// ─────────────────────────────────────────────────
+updateDeviceStatus(false);
+// Coba connect otomatis, retry tiap 3 detik sampai berhasil
+(function autoConnect() {
+  tryConnect().catch(() => {});
+  setTimeout(function retry() {
+    if (!rawSse || rawSse.readyState === EventSource.CLOSED) {
+      tryConnect().catch(() => {});
+    }
+    setTimeout(retry, 3000);
+  }, 3000);
+})();
+</script>
+</body>
+</html>

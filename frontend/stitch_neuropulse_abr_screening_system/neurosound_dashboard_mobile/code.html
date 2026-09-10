@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>NeuroScan ABR - Clinical Dashboard</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "tertiary-container": "#522800",
+                    "outline": "#73777d",
+                    "on-primary": "#ffffff",
+                    "primary-container": "#1c354a",
+                    "on-tertiary": "#ffffff",
+                    "on-surface": "#1b1c1d",
+                    "on-secondary-container": "#3c6e56",
+                    "error-container": "#ffdad6",
+                    "secondary-container": "#b8efd1",
+                    "surface-container-low": "#f4f3f5",
+                    "on-primary-fixed-variant": "#31495f",
+                    "on-tertiary-container": "#e5832b",
+                    "on-surface-variant": "#43474c",
+                    "inverse-surface": "#2f3032",
+                    "on-tertiary-fixed": "#2f1400",
+                    "secondary-fixed-dim": "#9dd2b5",
+                    "on-background": "#1b1c1d",
+                    "surface-tint": "#496178",
+                    "inverse-on-surface": "#f2f0f2",
+                    "background": "#faf9fb",
+                    "surface-dim": "#dbd9db",
+                    "primary": "#032034",
+                    "surface-container": "#efedef",
+                    "on-primary-fixed": "#011d31",
+                    "primary-fixed": "#cde5ff",
+                    "on-error-container": "#93000a",
+                    "on-error": "#ffffff",
+                    "tertiary": "#331600",
+                    "surface-container-high": "#e9e8ea",
+                    "surface-container-highest": "#e3e2e4",
+                    "primary-fixed-dim": "#b0c9e4",
+                    "on-secondary-fixed-variant": "#1c503a",
+                    "on-secondary": "#ffffff",
+                    "tertiary-fixed-dim": "#ffb781",
+                    "on-primary-container": "#859eb7",
+                    "on-secondary-fixed": "#002114",
+                    "surface": "#faf9fb",
+                    "secondary": "#366850",
+                    "on-tertiary-fixed-variant": "#703800",
+                    "tertiary-fixed": "#ffdcc4",
+                    "surface-container-lowest": "#ffffff",
+                    "error": "#ba1a1a",
+                    "outline-variant": "#c3c7cd",
+                    "secondary-fixed": "#b8efd1",
+                    "surface-variant": "#e3e2e4",
+                    "surface-bright": "#faf9fb",
+                    "inverse-primary": "#b0c9e4"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "base": "4px",
+                    "sm": "8px",
+                    "xl": "32px",
+                    "gutter": "24px",
+                    "margin-desktop": "48px",
+                    "md": "16px",
+                    "lg": "24px",
+                    "margin-mobile": "16px",
+                    "xs": "4px"
+            },
+            "fontFamily": {
+                    "headline-sm": ["Inter"],
+                    "headline-md": ["Inter"],
+                    "body-md": ["Inter"],
+                    "label-sm": ["Inter"],
+                    "headline-lg-mobile": ["Inter"],
+                    "body-lg": ["Inter"],
+                    "body-sm": ["Inter"],
+                    "headline-lg": ["Inter"],
+                    "label-md": ["Inter"]
+            },
+            "fontSize": {
+                    "headline-sm": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                    "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                    "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                    "label-sm": ["11px", {"lineHeight": "14px", "fontWeight": "500"}],
+                    "headline-lg-mobile": ["24px", {"lineHeight": "32px", "fontWeight": "700"}],
+                    "body-lg": ["18px", {"lineHeight": "28px", "fontWeight": "400"}],
+                    "body-sm": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                    "headline-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                    "label-md": ["12px", {"lineHeight": "16px", "fontWeight": "600"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        body { font-family: 'Inter', sans-serif; }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .active-nav-icon {
+            font-variation-settings: 'FILL' 1;
+        }
+        /* Custom scroll hide */
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-surface min-h-screen pb-24">
+<!-- TopAppBar -->
+<header class="flex justify-between items-center w-full px-margin-mobile h-16 z-50 bg-surface border-b border-outline-variant fixed top-0 left-0">
+<div class="flex items-center gap-sm">
+<div class="w-8 h-8 rounded-lg bg-primary-container flex items-center justify-center">
+<span class="material-symbols-outlined text-on-primary-container" style="font-variation-settings: 'FILL' 1;">neurology</span>
+</div>
+<h1 class="font-title-lg text-title-lg font-bold text-primary">NeuroScan ABR</h1>
+</div>
+<div class="flex items-center gap-md">
+<button class="material-symbols-outlined text-on-surface-variant hover:bg-surface-container-low transition-colors p-base rounded-full cursor-pointer active:opacity-80">notifications</button>
+<div class="w-8 h-8 rounded-full overflow-hidden border border-outline-variant cursor-pointer active:opacity-80">
+<img alt="Clinical User Profile" class="w-full h-full object-cover" data-alt="A professional clinical physician profile portrait in a bright modern medical office. The doctor is wearing a clean white coat with a stethoscope around their neck. The lighting is soft and high-key, emphasizing a clean, authoritative, and trustworthy medical environment with a palette of soft whites and clinical blues." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAhtEAi-uywXu9wYa5nUJucu2UmTjFUhvye6TVhL7-5o76E3iZv_EzdRZjKevXSEmVZsIRCxR9tAJNXTrYbI-N92rm3vNSYhWskDmZ4SAW0udoF4Gypn4BjvkH8fxEmuTWdYTFc7QQS0xOFH-q-KTziCFbabhMS4IfexSZoFhCv0kszSSJs3pmYEquLaSVLoZtfHEELp8aFCirkloj0kcn3ZR4-kIM-2Q_Mx9XHsw3b1Q5Xeg-2uoGtVtUE8cXojrs46QOs_XYqnZbc"/>
+</div>
+</div>
+</header>
+<main class="pt-20 px-margin-mobile flex flex-col gap-lg">
+<!-- Main CTA Section -->
+<section class="mt-base">
+<button class="w-full bg-primary text-on-primary h-14 rounded-xl flex items-center justify-center gap-sm font-bold shadow-md active:scale-95 transition-transform">
+<span class="material-symbols-outlined">add_circle</span>
+<span class="font-headline-sm text-headline-sm">New Patient Scan</span>
+</button>
+</section>
+<!-- Metrics Bento Grid -->
+<section class="grid grid-cols-2 gap-md">
+<!-- System Status -->
+<div class="col-span-2 bg-surface-container-lowest border border-outline-variant rounded-xl p-md flex items-center gap-md">
+<div class="w-12 h-12 rounded-full bg-secondary-container flex items-center justify-center">
+<span class="material-symbols-outlined text-on-secondary-container" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+</div>
+<div>
+<p class="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">System Status</p>
+<p class="font-headline-sm text-headline-sm text-secondary">All Sensors Operational</p>
+</div>
+</div>
+<!-- Today's Scans -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-md flex flex-col justify-between aspect-square">
+<span class="material-symbols-outlined text-primary-container">analytics</span>
+<div>
+<p class="font-headline-lg text-headline-lg text-primary">12</p>
+<p class="font-label-md text-label-md text-on-surface-variant">Today's Scans</p>
+</div>
+</div>
+<!-- Battery / Device -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-md flex flex-col justify-between aspect-square">
+<span class="material-symbols-outlined text-tertiary-fixed-dim">battery_very_low</span>
+<div>
+<p class="font-headline-lg text-headline-lg text-tertiary">84%</p>
+<p class="font-label-md text-label-md text-on-surface-variant">Device Battery</p>
+</div>
+</div>
+</section>
+<!-- Recent Activity -->
+<section class="flex flex-col gap-md">
+<div class="flex justify-between items-end">
+<h2 class="font-headline-sm text-headline-sm text-primary">Recent Activity</h2>
+<button class="text-secondary font-label-md text-label-md hover:underline">View History</button>
+</div>
+<div class="flex flex-col gap-sm">
+<!-- Activity Item 1 -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-md flex items-center justify-between">
+<div class="flex items-center gap-md">
+<div class="w-10 h-10 rounded-lg bg-surface-container-high flex items-center justify-center">
+<span class="material-symbols-outlined text-on-surface-variant">person</span>
+</div>
+<div>
+<p class="font-body-md text-body-md font-bold text-on-surface">Patient #8291</p>
+<p class="font-label-sm text-label-sm text-on-surface-variant">ABR Scan Completed • 2h ago</p>
+</div>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant">chevron_right</span>
+</div>
+<!-- Activity Item 2 -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-md flex items-center justify-between">
+<div class="flex items-center gap-md">
+<div class="w-10 h-10 rounded-lg bg-secondary-container/30 flex items-center justify-center">
+<span class="material-symbols-outlined text-secondary">sync</span>
+</div>
+<div>
+<p class="font-body-md text-body-md font-bold text-on-surface">Cloud Sync</p>
+<p class="font-label-sm text-label-sm text-on-surface-variant">Data successfully uploaded • 4h ago</p>
+</div>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant">chevron_right</span>
+</div>
+<!-- Activity Item 3 -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-md flex items-center justify-between">
+<div class="flex items-center gap-md">
+<div class="w-10 h-10 rounded-lg bg-surface-container-high flex items-center justify-center">
+<span class="material-symbols-outlined text-on-surface-variant">person</span>
+</div>
+<div>
+<p class="font-body-md text-body-md font-bold text-on-surface">Patient #7112</p>
+<p class="font-label-sm text-label-sm text-on-surface-variant">Report Generated • 6h ago</p>
+</div>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant">chevron_right</span>
+</div>
+</div>
+</section>
+<!-- Device Status Banner -->
+<section class="bg-primary-container text-on-primary-container rounded-2xl p-lg relative overflow-hidden">
+<div class="relative z-10">
+<h3 class="font-headline-sm text-headline-sm text-on-primary-container mb-xs">NEURO-X1 Pro</h3>
+<p class="font-body-sm text-body-sm text-on-primary-container/80 mb-md">Last calibration: Sept 12, 2024</p>
+<div class="flex gap-sm">
+<span class="px-sm py-xs bg-on-primary-container/10 border border-on-primary-container/20 rounded-full font-label-sm text-label-sm">Bluetooth Connected</span>
+<span class="px-sm py-xs bg-on-primary-container/10 border border-on-primary-container/20 rounded-full font-label-sm text-label-sm">Firmware v2.4</span>
+</div>
+</div>
+<div class="absolute -right-4 -bottom-4 opacity-10">
+<span class="material-symbols-outlined text-[120px]" style="font-variation-settings: 'wght' 200;">sensors</span>
+</div>
+</section>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 left-0 w-full bg-surface-container-lowest border-t border-outline-variant flex justify-around items-center h-20 px-base z-50">
+<!-- Home (Active) -->
+<button class="flex flex-col items-center justify-center gap-xs text-primary transition-colors cursor-pointer">
+<div class="px-5 py-1 bg-primary-container rounded-full flex items-center justify-center mb-1">
+<span class="material-symbols-outlined active-nav-icon">dashboard</span>
+</div>
+<span class="font-label-md text-label-md font-bold">Dashboard</span>
+</button>
+<!-- Scan -->
+<button class="flex flex-col items-center justify-center gap-xs text-on-surface-variant hover:bg-surface-container-high transition-all cursor-pointer">
+<span class="material-symbols-outlined mb-1">sensors</span>
+<span class="font-label-md text-label-md">Start Scan</span>
+</button>
+<!-- History -->
+<button class="flex flex-col items-center justify-center gap-xs text-on-surface-variant hover:bg-surface-container-high transition-all cursor-pointer">
+<span class="material-symbols-outlined mb-1">history</span>
+<span class="font-label-md text-label-md">History</span>
+</button>
+<!-- Device -->
+<button class="flex flex-col items-center justify-center gap-xs text-on-surface-variant hover:bg-surface-container-high transition-all cursor-pointer">
+<span class="material-symbols-outlined mb-1">settings_input_component</span>
+<span class="font-label-md text-label-md">Status</span>
+</button>
+<!-- Menu/Settings -->
+<button class="flex flex-col items-center justify-center gap-xs text-on-surface-variant hover:bg-surface-container-high transition-all cursor-pointer">
+<span class="material-symbols-outlined mb-1">settings</span>
+<span class="font-label-md text-label-md">Settings</span>
+</button>
+</nav>
+<!-- Footer for mobile context (minimal) -->
+<footer class="w-full px-margin-mobile py-lg bg-surface-container-lowest border-t border-outline-variant mb-20">
+<p class="font-label-md text-label-md text-on-surface-variant text-center">© 2024 NeuroScan Diagnostics. System Status: All Sensors Operational.</p>
+</footer>
+<script>
+        // Simple micro-interactions
+        document.querySelectorAll('button').forEach(btn => {
+            btn.addEventListener('click', () => {
+                btn.style.transform = 'scale(0.95)';
+                setTimeout(() => {
+                    btn.style.transform = '';
+                }, 100);
+            });
+        });
+
+        // Pull to refresh simulation logic could be added here
+    </script>
+</body></html>

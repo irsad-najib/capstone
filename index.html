@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Simulasi ABR — SonicNeuro Capstone</title>
+<style>
+  :root {
+    --bg: #f7f9fb;
+    --panel: #ffffff;
+    --border: #e0e3e5;
+    --text: #191c1e;
+    --muted: #45464d;
+    --accent: #00687a;
+    --accent2: #009668;
+    --chip-bg: #e8f5f7;
+    --chip-text: #00687a;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    min-height: 100vh;
+  }
+
+  /* Header */
+  .hero {
+    background: linear-gradient(135deg, #00687a 0%, #009668 100%);
+    color: #fff;
+    padding: 48px 48px 40px;
+  }
+  .hero-top { display: flex; align-items: center; gap: 16px; margin-bottom: 20px; }
+  .hero-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.3);
+    padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 700;
+    letter-spacing: .05em; text-transform: uppercase;
+  }
+  .hero h1 { font-size: 28px; font-weight: 800; margin-bottom: 8px; }
+  .hero p  { font-size: 14px; opacity: .85; max-width: 600px; line-height: 1.6; }
+  .hero-meta {
+    display: flex; gap: 24px; margin-top: 20px; flex-wrap: wrap;
+  }
+  .hero-meta span {
+    font-size: 12px; opacity: .75;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .hero-meta b { color: #fff; opacity: 1; }
+
+  /* Main */
+  .main { max-width: 1100px; margin: 0 auto; padding: 36px 48px 60px; }
+
+  /* Section */
+  .section-label {
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .08em; color: var(--muted);
+    margin: 36px 0 14px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .section-label:first-child { margin-top: 0; }
+
+  /* Grid */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+  .grid.wide { grid-template-columns: repeat(auto-fill, minmax(480px, 1fr)); }
+
+  /* Card */
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    display: flex; flex-direction: column;
+    transition: box-shadow .15s, transform .15s;
+    cursor: pointer;
+    text-decoration: none; color: inherit;
+  }
+  .card:hover {
+    box-shadow: 0 4px 20px rgba(0,104,122,.12);
+    transform: translateY(-2px);
+  }
+  .card-thumb {
+    height: 140px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 56px;
+    position: relative;
+    overflow: hidden;
+  }
+  .card-body { padding: 16px 18px 20px; flex: 1; display: flex; flex-direction: column; }
+  .card-title { font-size: 14px; font-weight: 700; margin-bottom: 6px; }
+  .card-desc  { font-size: 12px; color: var(--muted); line-height: 1.5; flex: 1; }
+  .card-footer {
+    margin-top: 14px; padding-top: 12px;
+    border-top: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .chip {
+    display: inline-block; padding: 2px 8px; border-radius: 20px;
+    font-size: 10px; font-weight: 700; background: var(--chip-bg);
+    color: var(--chip-text); border: 1px solid rgba(0,104,122,.2);
+  }
+  .chip.orange { background:#fff4e6; color:#b94a00; border-color:rgba(185,74,0,.2); }
+  .chip.purple { background:#f3eeff; color:#6d35c4; border-color:rgba(109,53,196,.2); }
+  .chip.green  { background:#e6f9f1; color:#005236; border-color:rgba(0,82,54,.2); }
+  .chip.gray   { background:#f2f4f6; color:#45464d; border-color:#c6c6cd; }
+  .open-btn {
+    font-size: 11px; font-weight: 700; color: var(--accent);
+    text-decoration: none; display: flex; align-items: center; gap: 4px;
+  }
+  .open-btn::after { content: '→'; }
+  .open-btn:hover { text-decoration: underline; }
+
+  /* Thumb backgrounds */
+  .t-ws      { background: linear-gradient(135deg,#0d1117,#1a2634); }
+  .t-tone    { background: linear-gradient(135deg,#0d1117,#1a1a2e); }
+  .t-butter  { background: linear-gradient(135deg,#0f0c29,#302b63); }
+  .t-epoch   { background: linear-gradient(135deg,#0d1117,#1a2a0d); }
+  .t-abr     { background: linear-gradient(135deg,#1a0d2e,#0d1a2e); }
+  .t-snr     { background: linear-gradient(135deg,#0d1a10,#0d1117); }
+  .t-dash    { background: linear-gradient(135deg,#0a0e14,#161b22); }
+
+  /* Footer */
+  .footer {
+    text-align: center; padding: 24px 48px;
+    border-top: 1px solid var(--border);
+    font-size: 11px; color: var(--muted);
+  }
+  .footer b { color: var(--text); }
+
+  /* Tip box */
+  .tip {
+    background: #e8f5f7; border: 1px solid rgba(0,104,122,.2);
+    border-radius: 8px; padding: 12px 16px;
+    font-size: 12px; color: #004e5c;
+    display: flex; gap: 10px; align-items: flex-start;
+    margin-bottom: 24px;
+  }
+  .tip-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+</style>
+</head>
+<body>
+
+<!-- Hero -->
+<div class="hero">
+  <div class="hero-top">
+    <div class="hero-badge">📡 Capstone DTETI 2026</div>
+    <div class="hero-badge">🧠 Sistem ABR ESP32</div>
+  </div>
+  <h1>Simulasi Visual — SonicNeuro ABR</h1>
+  <p>
+    Kumpulan simulasi interaktif berbasis sinyal nyata dari sistem ABR ESP32-ADS1115-PCM5102A.
+    Seluruh parameter diambil dari kode firmware dan backend Go secara langsung.
+    Dirancang untuk keperluan <b>proposal dan dokumentasi Capstone.</b>
+  </p>
+  <div class="hero-meta">
+    <span>📦 <b>ADS1115</b> @ 860 SPS</span>
+    <span>🎵 <b>PCM5102A</b> I2S 44100 Hz</span>
+    <span>⚙️ <b>Go Backend</b> Port 8080</span>
+    <span>🔬 <b>Butterworth BP</b> 100–408 Hz</span>
+    <span>🧮 <b>FiltFilt</b> Zero-phase</span>
+    <span>📐 <b>Epoch</b> 50ms post-stimulus</span>
+  </div>
+</div>
+
+<div class="main">
+
+  <div class="tip">
+    <span class="tip-icon">💡</span>
+    <div>
+      <b>Cara pakai untuk proposal:</b> Buka tiap simulasi → biarkan berjalan beberapa detik → tekan
+      <kbd style="background:#fff;border:1px solid #c6c6cd;padding:1px 5px;border-radius:3px;font-size:10px">F11</kbd>
+      untuk fullscreen → screenshot dengan
+      <kbd style="background:#fff;border:1px solid #c6c6cd;padding:1px 5px;border-radius:3px;font-size:10px">PrtSc</kbd>
+      atau tool screenshot. Untuk simulasi yang ada tombol "Jalankan", klik dulu sebelum screenshot.
+    </div>
+  </div>
+
+  <!-- ── Sinyal & Stimulus ─────────────────────────────── -->
+  <div class="section-label">① Sinyal & Stimulus</div>
+  <div class="grid wide">
+
+    <a class="card" href="ws-frame-simulation.html" target="_blank">
+      <div class="card-thumb t-ws">📡</div>
+      <div class="card-body">
+        <div class="card-title">Aliran Frame WebSocket — Raw ADC & JSON</div>
+        <div class="card-desc">
+          Visualisasi real-time frame kompak <code>{"t","r","s"}</code> yang dikirim ESP32 ke
+          Go backend via WebSocket. Panel atas: sinyal ADC dengan marker stimulus kuning.
+          Panel bawah: log JSON per frame, frame kuning = stimulus aktif (s=1).
+        </div>
+        <div class="card-footer">
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <span class="chip">ADS1115 · 860 SPS</span>
+            <span class="chip orange">Animasi real-time</span>
+          </div>
+          <span class="open-btn">Buka</span>
+        </div>
+      </div>
+    </a>
+
+    <a class="card" href="sim-tone-burst.html" target="_blank">
+      <div class="card-thumb t-tone">🎵</div>
+      <div class="card-body">
+        <div class="card-title">Tone Burst 1000 Hz — Hanning Envelope & FFT</div>
+        <div class="card-desc">
+          Sinyal stimulus klik PCM5102A dalam domain waktu (kiri) dengan envelope Hanning,
+          carrier sine, dan hasil windowing. Spektrum FFT 8192 titik (kanan) menunjukkan
+          bandwidth −3dB. Pilih frekuensi 500/1000/2000/4000 Hz, jumlah siklus, dan window.
+        </div>
+        <div class="card-footer">
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <span class="chip">PCM5102A · 44100 SPS</span>
+            <span class="chip orange">FFT 8192 pts</span>
+          </div>
+          <span class="open-btn">Buka</span>
+        </div>
+      </div>
+    </a>
+
+  </div>
+
+  <!-- ── Pemrosesan Sinyal ─────────────────────────────── -->
+  <div class="section-label">② Pemrosesan Sinyal (DSP)</div>
+  <div class="grid wide">
+
+    <a class="card" href="sim-butterworth.html" target="_blank">
+      <div class="card-thumb t-butter">🔬</div>
+      <div class="card-body">
+        <div class="card-title">Respons Frekuensi Butterworth Bandpass Orde-2</div>
+        <div class="card-desc">
+          Port langsung dari <code>filter.go:ButterBP()</code>. Panel atas: magnitudo |H(f)| dB
+          — kurva orde-2 vs FiltFilt (zero-phase, orde efektif 4). Panel bawah: fase ∠H(f).
+          Default: 100–408 Hz (ADS1115 @ 860 SPS). Koefisien SOS ditampilkan.
+        </div>
+        <div class="card-footer">
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <span class="chip purple">2 SOS sections</span>
+            <span class="chip">FiltFilt zero-phase</span>
+          </div>
+          <span class="open-btn">Buka</span>
+        </div>
+      </div>
+    </a>
+
+    <a class="card" href="sim-epoching.html" target="_blank">
+      <div class="card-thumb t-epoch">📐</div>
+      <div class="card-body">
+        <div class="card-title">Fixed Window Epoching — 3 Panel Animasi</div>
+        <div class="card-desc">
+          Tiga panel: ① sinyal EEG kontinyu dengan marker stimulus dan highlight window epoch,
+          ② 4 epoch tersekstrak (warna berbeda per trial), ③ rata-rata ABR yang terbentuk
+          progresif. Identik dengan logika <code>processor.go:tryExtractEpochs()</code>.
+        </div>
+        <div class="card-footer">
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <span class="chip green">Epoch 50ms</span>
+            <span class="chip orange">Animasi</span>
+          </div>
+          <span class="open-btn">Buka</span>
+        </div>
+      </div>
+    </a>
+
+  </div>
+
+  <!-- ── Analisis ABR ─────────────────────────────────── -->
+  <div class="section-label">③ Analisis & Konvergensi ABR</div>
+  <div class="grid wide">
+
+    <a class="card" href="sim-abr-evolution.html" target="_blank">
+      <div class="card-thumb t-abr">🧠</div>
+      <div class="card-body">
+        <div class="card-title">Evolusi Bentuk Gelombang ABR — N = 1 → 1000 Trial</div>
+        <div class="card-desc">
+          6 kartu waveform pada N = 1, 10, 50, 100, 500, 1000 trial. Panel overlay
+          membandingkan semua waveform (makin vivid = makin banyak trial). Tabel SNR
+          simulasi vs teoritis (SNR ∝ √N). Tekan tombol "Jalankan Simulasi" dulu.
+        </div>
+        <div class="card-footer">
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <span class="chip purple">SNR ∝ √N</span>
+            <span class="chip">Wave I, III, V</span>
+            <span class="chip gray">Klik Jalankan dulu</span>
+          </div>
+          <span class="open-btn">Buka</span>
+        </div>
+      </div>
+    </a>
+
+    <a class="card" href="sim-snr-pearson.html" target="_blank">
+      <div class="card-thumb t-snr">📈</div>
+      <div class="card-body">
+        <div class="card-title">SNR & Pearson r vs Jumlah Trial</div>
+        <div class="card-desc">
+          Grafik kiri: SNR(dB) — simulasi (hijau) vs teoritis 10·log₁₀(N) (merah putus-putus).
+          Grafik kanan: Pearson r korelasi terhadap template ABR ideal, dengan marker
+          konvergen r ≥ 0,9. Port dari <code>dsp/filter.go:PearsonR()</code>.
+        </div>
+        <div class="card-footer">
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <span class="chip green">PearsonR()</span>
+            <span class="chip orange">r ≥ 0.9 konvergen</span>
+            <span class="chip gray">Klik Jalankan dulu</span>
+          </div>
+          <span class="open-btn">Buka</span>
+        </div>
+      </div>
+    </a>
+
+  </div>
+
+  <!-- ── Dashboard ─────────────────────────────────────── -->
+  <div class="section-label">④ Dashboard Sistem Lengkap</div>
+  <div class="grid">
+
+    <a class="card" href="sim-dashboard.html" target="_blank">
+      <div class="card-thumb t-dash">🖥️</div>
+      <div class="card-body">
+        <div class="card-title">Dashboard ABR — Live + Simulasi</div>
+        <div class="card-desc">
+          Dashboard lengkap dengan sidebar navigasi: ABR real-time · Raw Waveform · Frame Log
+          · SNR Progression · Pengaturan. Otomatis menyambung ke backend Go via SSE. Fallback
+          ke simulasi jika backend offline.
+        </div>
+        <div class="card-footer">
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <span class="chip">SSE /raw/stream</span>
+            <span class="chip">SSE /abr/stream</span>
+            <span class="chip orange">Live atau Sim</span>
+          </div>
+          <span class="open-btn">Buka</span>
+        </div>
+      </div>
+    </a>
+
+  </div>
+
+  <!-- ── Referensi kode ─────────────────────────────────── -->
+  <div class="section-label">📁 Referensi Kode Sumber</div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px">
+    {[
+      ["ads1115/src/main.ino",      "Firmware ESP32 · ADS1115 + PCM5102A"],
+      ["backend/api/ws.go",         "WebSocket Hub · frame parsing"],
+      ["backend/internal/abr/processor.go", "Epoch extraction · running avg"],
+      ["backend/internal/dsp/filter.go",    "ButterBP · FiltFilt · PearsonR"],
+      ["backend/internal/abr/analyze.go",   "ComputeSNR · ABR analysis"],
+    ].map(([f, d]) => `
+    <div style="background:#fff;border:1px solid #e0e3e5;border-radius:6px;padding:10px 14px">
+      <code style="font-size:11px;color:#00687a;display:block;margin-bottom:4px">${f}</code>
+      <span style="font-size:11px;color:#45464d">${d}</span>
+    </div>`).join('')}
+  </div>
+
+</div>
+
+<div class="footer">
+  <b>SonicNeuro Capstone DTETI 2026</b> ·
+  Simulasi berdasarkan kode nyata (firmware + backend Go) ·
+  Server: <code>http://localhost:7654</code>
+</div>
+
+<script>
+// Render reference cards properly
+document.querySelectorAll('.main > div:last-of-type').forEach(el => {
+  if (el.textContent.includes('ads1115/src/main.ino')) {
+    const refs = [
+      ['ads1115/src/main.ino',      'Firmware ESP32 · ADS1115 + PCM5102A'],
+      ['backend/api/ws.go',         'WebSocket Hub · frame parsing'],
+      ['backend/internal/abr/processor.go', 'Epoch extraction · running avg'],
+      ['backend/internal/dsp/filter.go',    'ButterBP · FiltFilt · PearsonR'],
+      ['backend/internal/abr/analyze.go',   'ComputeSNR · ABR analysis'],
+    ];
+    el.innerHTML = refs.map(([f, d]) => `
+      <div style="background:#fff;border:1px solid #e0e3e5;border-radius:6px;padding:10px 14px">
+        <code style="font-size:11px;color:#00687a;display:block;margin-bottom:4px">${f}</code>
+        <span style="font-size:11px;color:#45464d">${d}</span>
+      </div>`).join('');
+  }
+});
+</script>
+</body>
+</html>

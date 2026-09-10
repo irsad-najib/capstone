@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SNR & Pearson r vs Jumlah Trial — Simulasi vs Teoritis</title>
+<style>
+:root{--bg:#0d1117;--panel:#161b22;--border:#30363d;--text:#e6edf3;--muted:#8b949e;--accent:#58a6ff;--green:#3fb950;--yellow:#d29922;--red:#f85149;--orange:#ffa657;--purple:#bc8cff;--mono:'Courier New',monospace}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px;padding:16px}
+.header{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+.header h1{font-size:15px;font-weight:700}
+.badge{padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600}
+.badge-blue{background:rgba(88,166,255,.15);color:var(--accent);border:1px solid rgba(88,166,255,.3)}
+.badge-green{background:rgba(63,185,80,.2);color:var(--green);border:1px solid rgba(63,185,80,.4)}
+.badge-orange{background:rgba(255,166,87,.15);color:var(--orange);border:1px solid rgba(255,166,87,.3)}
+.badge-purple{background:rgba(188,140,255,.15);color:var(--purple);border:1px solid rgba(188,140,255,.3)}
+.controls{display:flex;gap:10px;flex-wrap:wrap;padding:10px 14px;background:var(--panel);border:1px solid var(--border);border-radius:8px;margin-bottom:12px;align-items:center}
+.ctrl-group{display:flex;gap:6px;align-items:center}
+label{color:var(--muted);font-size:11px;white-space:nowrap}
+select{padding:4px 8px;background:#21262d;border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;cursor:pointer}
+button{padding:5px 16px;border-radius:6px;border:1px solid var(--border);background:#21262d;color:var(--text);font-size:12px;cursor:pointer;font-weight:600}
+button.primary{background:rgba(88,166,255,.15);border-color:var(--accent);color:var(--accent)}
+button.running{background:rgba(63,185,80,.15);border-color:var(--green);color:var(--green)}
+.progress-bar{height:4px;background:var(--border);border-radius:2px;overflow:hidden;margin-bottom:12px}
+.progress-fill{height:100%;background:linear-gradient(90deg,var(--green),var(--accent));border-radius:2px;transition:width .2s}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+@media(max-width:700px){.two-col{grid-template-columns:1fr}}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.panel-header{padding:8px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.02);flex-wrap:wrap}
+.panel-title{font-weight:700;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+canvas{display:block;width:100%;background:#0a0e14}
+.legend{display:flex;gap:14px;margin-left:auto;align-items:center}
+.leg{display:flex;gap:5px;align-items:center;font-size:11px}
+.leg-line{width:22px;height:2.5px;border-radius:2px}
+.info-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(175px,1fr));gap:8px;margin-bottom:12px}
+.info-card{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:10px 14px}
+.ins-label{font-size:10px;color:var(--muted);text-transform:uppercase;margin-bottom:4px}
+.ins-value{font-family:var(--mono);font-size:14px;font-weight:700}
+.formula-box{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:10px 16px;font-family:var(--mono);font-size:12px;margin-bottom:12px;display:flex;gap:24px;flex-wrap:wrap;align-items:center}
+.formula-box .eq{color:var(--accent)}
+.formula-box .note{color:var(--muted);font-size:11px}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>📈 SNR dan Pearson r vs Jumlah Trial — Simulasi vs Teoritis</h1>
+  <span class="badge badge-green">SNR ∝ √N</span>
+  <span class="badge badge-blue">Pearson r → 1.0</span>
+  <span class="badge badge-purple">abr/analyze.go:ComputeSNR</span>
+</div>
+
+<div class="formula-box">
+  <span><span style="color:var(--muted)">SNR (teori):</span> <span class="eq">SNR(N) = SNR₁ · √N</span></span>
+  <span><span style="color:var(--muted)">dB:</span> <span class="eq">SNR_dB = 10 · log₁₀(N) + C</span></span>
+  <span><span style="color:var(--muted)">Pearson r:</span> <span class="eq">r(N) = 1 − 1/(a·√N + b)</span></span>
+  <span class="note">Dari backend/internal/abr/analyze.go:PearsonR()</span>
+</div>
+
+<div class="controls">
+  <div class="ctrl-group">
+    <label>Max Trial</label>
+    <select id="selMax">
+      <option value="200">200</option>
+      <option value="500">500</option>
+      <option value="1000" selected>1000</option>
+      <option value="2000">2000</option>
+    </select>
+  </div>
+  <div class="ctrl-group">
+    <label>Run Simulasi</label>
+    <select id="selRuns">
+      <option value="1">1×</option>
+      <option value="3" selected>3× (avg)</option>
+      <option value="5">5× (avg)</option>
+    </select>
+  </div>
+  <div class="ctrl-group">
+    <label>dB Level</label>
+    <select id="selDb">
+      <option value="60">60 dB</option>
+      <option value="70">70 dB</option>
+      <option value="80" selected>80 dB</option>
+      <option value="90">90 dB</option>
+    </select>
+  </div>
+  <div class="ctrl-group">
+    <label>Noise</label>
+    <select id="selNoise">
+      <option value="0.5">Rendah</option>
+      <option value="1.0" selected>Sedang</option>
+      <option value="2.0">Tinggi</option>
+    </select>
+  </div>
+  <div class="ctrl-group">
+    <label>Skala X</label>
+    <select id="selXscale">
+      <option value="log" selected>Log</option>
+      <option value="linear">Linear</option>
+    </select>
+  </div>
+  <div class="ctrl-group" style="margin-left:auto">
+    <button id="btnRun" class="primary">▶ Jalankan</button>
+  </div>
+</div>
+
+<div class="progress-bar"><div class="progress-fill" id="progFill" style="width:0%"></div></div>
+
+<div class="info-grid">
+  <div class="info-card">
+    <div class="ins-label">SNR pada N=100</div>
+    <div class="ins-value" id="vSNR100" style="color:var(--green)">—</div>
+  </div>
+  <div class="info-card">
+    <div class="ins-label">SNR pada N=500</div>
+    <div class="ins-value" id="vSNR500" style="color:var(--accent)">—</div>
+  </div>
+  <div class="info-card">
+    <div class="ins-label">SNR pada N=1000</div>
+    <div class="ins-value" id="vSNR1000" style="color:var(--purple)">—</div>
+  </div>
+  <div class="info-card">
+    <div class="ins-label">Pearson r @ N=100</div>
+    <div class="ins-value" id="vR100" style="color:var(--orange)">—</div>
+  </div>
+  <div class="info-card">
+    <div class="ins-label">Pearson r @ N=1000</div>
+    <div class="ins-value" id="vR1000" style="color:var(--yellow)">—</div>
+  </div>
+  <div class="info-card">
+    <div class="ins-label">Trial → Konvergen (r≥0.9)</div>
+    <div class="ins-value" id="vConv" style="color:var(--red)">—</div>
+  </div>
+</div>
+
+<div class="two-col">
+  <!-- SNR -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="panel-title">📊 SNR (dB) vs Jumlah Trial</span>
+      <div class="legend">
+        <div class="leg"><div class="leg-line" style="background:var(--green)"></div>Simulasi</div>
+        <div class="leg"><div class="leg-line" style="background:var(--red);height:1px;border-top:2px dashed var(--red)"></div>Teoritis √N</div>
+        <div class="leg"><div class="leg-line" style="background:rgba(88,166,255,.4)"></div>Batas konvergen</div>
+      </div>
+    </div>
+    <canvas id="cSNR" height="320"></canvas>
+  </div>
+  <!-- Pearson r -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="panel-title">🔗 Pearson r vs Jumlah Trial</span>
+      <div class="legend">
+        <div class="leg"><div class="leg-line" style="background:var(--orange)"></div>Simulasi</div>
+        <div class="leg"><div class="leg-line" style="background:var(--red);height:1px;border-top:2px dashed var(--red)"></div>Model teoritis</div>
+        <div class="leg"><div class="leg-line" style="background:rgba(63,185,80,.4)"></div>r = 0.9</div>
+      </div>
+    </div>
+    <canvas id="cPearson" height="320"></canvas>
+  </div>
+</div>
+
+<script>
+const FS = 860;
+const EPOCH_MS = 50;
+
+// ── PearsonR: port dari dsp/filter.go ─────────────────────────
+function pearsonR(x, y) {
+  const n = Math.min(x.length, y.length);
+  if (n < 2) return 0;
+  let mx = 0, my = 0;
+  for (let i = 0; i < n; i++) { mx += x[i]; my += y[i]; }
+  mx /= n; my /= n;
+  let num = 0, dx2 = 0, dy2 = 0;
+  for (let i = 0; i < n; i++) {
+    const dx = x[i] - mx, dy = y[i] - my;
+    num += dx*dy; dx2 += dx*dx; dy2 += dy*dy;
+  }
+  const d = Math.sqrt(dx2 * dy2);
+  return d > 0 ? num / d : 0;
+}
+
+// ── Simulate one run ───────────────────────────────────────────
+function simulateRun(maxTrials, dbScale, noiseScale) {
+  const epochSamples = Math.round(FS * EPOCH_MS / 1000);
+  const abrWaves = [
+    {d:4,  a:0.18*dbScale, w:1.8},
+    {d:12, a:0.12*dbScale, w:2.5},
+    {d:20, a:0.28*dbScale, w:3.5},
+    {d:28, a:0.08*dbScale, w:2.5},
+  ];
+
+  const avg = new Float64Array(epochSamples);
+  // True ABR template (for Pearson r reference)
+  const template = new Float64Array(epochSamples);
+  for (let i = 0; i < epochSamples; i++) {
+    for (const w of abrWaves) {
+      const dt = i - w.d;
+      template[i] += w.a * Math.exp(-dt*dt / (2*w.w*w.w));
+    }
+  }
+
+  const snrCurve = [], rCurve = [];
+  let noise = 0;
+
+  for (let trial = 1; trial <= maxTrials; trial++) {
+    // Generate epoch
+    const ep = new Float64Array(epochSamples);
+    noise += (Math.random() - 0.5) * 0.02;
+    noise *= 0.99;
+    for (let i = 0; i < epochSamples; i++) {
+      let n = (Math.random() - 0.5) * 0.05 * noiseScale;
+      n += Math.sin(2*Math.PI*50*i/FS) * 0.012 * noiseScale;
+      const pol = trial % 2 === 0 ? 1 : -1;
+      let abr = 0;
+      for (const w of abrWaves) {
+        const dt = i - w.d;
+        abr += pol * w.a * Math.exp(-dt*dt / (2*w.w*w.w));
+      }
+      ep[i] = n + abr + noise;
+    }
+
+    // Running avg
+    for (let i = 0; i < epochSamples; i++) avg[i] = (avg[i]*(trial-1) + ep[i]) / trial;
+
+    // SNR: peak signal / noise RMS
+    let sig = 0;
+    for (let i = 3; i < 28 && i < epochSamples; i++) sig = Math.max(sig, Math.abs(avg[i]));
+    let noisePow = 0, nc = 0;
+    for (let i = 0; i < 3 && i < epochSamples; i++) { noisePow += avg[i]*avg[i]; nc++; }
+    const noiseRMS = nc > 0 ? Math.sqrt(noisePow/nc) : 1e-9;
+    const snr = noiseRMS > 1e-10 ? 20*Math.log10(sig/noiseRMS) : -20;
+
+    // Pearson r vs template
+    const r = pearsonR(Array.from(avg), Array.from(template));
+
+    snrCurve.push(snr);
+    rCurve.push(r);
+  }
+  return { snrCurve, rCurve };
+}
+
+// ── Canvas helper ─────────────────────────────────────────────
+function setupCanvas(id) {
+  const c = document.getElementById(id);
+  const dpr = window.devicePixelRatio || 1;
+  c.width = c.offsetWidth * dpr; c.height = c.offsetHeight * dpr;
+  const ctx = c.getContext('2d');
+  ctx.scale(dpr, dpr);
+  return { ctx, W: c.offsetWidth, H: c.offsetHeight };
+}
+
+// ── Generic chart draw ─────────────────────────────────────────
+function drawChart(id, curves, yRange, yLabel, xLabel, xScale, maxX, extraLines) {
+  const { ctx, W, H } = setupCanvas(id);
+  ctx.clearRect(0, 0, W, H);
+  const PAD = { l: 52, r: 16, t: 16, b: 32 };
+  const PW = W - PAD.l - PAD.r, PH = H - PAD.t - PAD.b;
+
+  const toX = x => {
+    if (xScale === 'log') {
+      const lo = Math.log10(1), hi = Math.log10(maxX);
+      return PAD.l + PW * (Math.log10(Math.max(1, x)) - lo) / (hi - lo);
+    }
+    return PAD.l + PW * x / maxX;
+  };
+  const toY = v => PAD.t + PH * (1 - (v - yRange.min) / (yRange.max - yRange.min));
+
+  // Grid
+  ctx.strokeStyle = '#1c2430'; ctx.lineWidth = 1;
+  yRange.ticks.forEach(({ v, lbl }) => {
+    const y = toY(v);
+    ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(W-PAD.r, y); ctx.stroke();
+    ctx.fillStyle='#8b949e'; ctx.font='10px Courier New'; ctx.textAlign='right';
+    ctx.fillText(lbl, PAD.l-3, y+4);
+  });
+  const xTicks = xScale === 'log'
+    ? [1,2,5,10,20,50,100,200,500,1000,2000].filter(x => x <= maxX)
+    : Array.from({length:6},(_,i) => Math.round(maxX*i/5));
+  xTicks.forEach(x => {
+    const px = toX(x); if (px < PAD.l || px > W-PAD.r) return;
+    ctx.beginPath(); ctx.moveTo(px, PAD.t); ctx.lineTo(px, H-PAD.b); ctx.stroke();
+    ctx.fillStyle='#8b949e'; ctx.font='10px Courier New'; ctx.textAlign='center';
+    ctx.fillText(x >= 1000 ? (x/1000)+'k' : x+'', px, H-PAD.b+14);
+  });
+
+  // Extra horizontal reference lines
+  (extraLines||[]).forEach(({ y, color, dash, label }) => {
+    const py = toY(y);
+    if (py < PAD.t || py > H-PAD.b) return;
+    ctx.strokeStyle = color; ctx.lineWidth = 1;
+    ctx.setLineDash(dash || []);
+    ctx.beginPath(); ctx.moveTo(PAD.l, py); ctx.lineTo(W-PAD.r, py); ctx.stroke();
+    ctx.setLineDash([]);
+    if (label) {
+      ctx.fillStyle = color; ctx.font = '10px Courier New'; ctx.textAlign = 'left';
+      ctx.fillText(label, PAD.l+4, py-3);
+    }
+  });
+
+  // Draw curves
+  curves.forEach(({ data, color, width, dash, label }) => {
+    ctx.strokeStyle = color; ctx.lineWidth = width||1.5; ctx.setLineDash(dash||[]);
+    ctx.beginPath();
+    let first = true;
+    for (let i = 0; i < data.length; i++) {
+      if (data[i] === null || data[i] === undefined) { first = true; continue; }
+      const x = toX(i+1);
+      const y = Math.max(PAD.t, Math.min(PAD.t+PH, toY(data[i])));
+      first ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      first = false;
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+  });
+
+  // Axis labels
+  ctx.save(); ctx.translate(12, H/2); ctx.rotate(-Math.PI/2);
+  ctx.textAlign='center'; ctx.fillStyle='#8b949e'; ctx.font='10px sans-serif';
+  ctx.fillText(yLabel, 0, 0); ctx.restore();
+  ctx.textAlign='center'; ctx.fillStyle='#8b949e'; ctx.font='10px sans-serif';
+  ctx.fillText(xLabel, W/2, H-2);
+}
+
+// ── Theoretical curves ────────────────────────────────────────
+function theorSNR(n, snr1) { return snr1 * Math.sqrt(n); } // linear
+function theorSNR_dB(n, c)  { return 10 * Math.log10(n) + c; }
+function theorR(n)           { return 1 - 1 / (0.5 * Math.sqrt(n) + 1); }
+
+// ── Run ───────────────────────────────────────────────────────
+let simData = null;
+
+async function run() {
+  const btn = document.getElementById('btnRun');
+  btn.textContent = '⏳ Mensimulasikan…';
+
+  const maxTrials  = parseInt(document.getElementById('selMax').value);
+  const nRuns      = parseInt(document.getElementById('selRuns').value);
+  const dbLevel    = parseInt(document.getElementById('selDb').value);
+  const noiseLevel = parseFloat(document.getElementById('selNoise').value);
+  const xScale     = document.getElementById('selXscale').value;
+  const dbScales   = {60:0.3,70:0.55,80:1.0,90:1.6};
+  const dbScale    = dbScales[dbLevel] || 1.0;
+
+  document.getElementById('progFill').style.width = '10%';
+
+  const allSNR = [], allR = [];
+  for (let run = 0; run < nRuns; run++) {
+    await new Promise(r => setTimeout(r, 0));
+    const { snrCurve, rCurve } = simulateRun(maxTrials, dbScale, noiseLevel);
+    allSNR.push(snrCurve); allR.push(rCurve);
+    document.getElementById('progFill').style.width = ((run+1)/nRuns*80+10)+'%';
+  }
+
+  // Average across runs
+  const snrAvg = Array(maxTrials).fill(0);
+  const rAvg   = Array(maxTrials).fill(0);
+  for (let t = 0; t < maxTrials; t++) {
+    for (let r = 0; r < nRuns; r++) { snrAvg[t] += allSNR[r][t]; rAvg[t] += allR[r][t]; }
+    snrAvg[t] /= nRuns; rAvg[t] /= nRuns;
+  }
+
+  simData = { snrAvg, rAvg, maxTrials };
+
+  // Theoretical SNR (calibrate to N=10 point)
+  const c = snrAvg[9] - 10*Math.log10(10);
+  const snrTheor = Array.from({length: maxTrials}, (_, i) => theorSNR_dB(i+1, c));
+  const rTheor   = Array.from({length: maxTrials}, (_, i) => theorR(i+1));
+
+  // Update info cards
+  const idx = n => Math.min(n-1, maxTrials-1);
+  document.getElementById('vSNR100').textContent  = snrAvg[idx(100)].toFixed(1) + ' dB';
+  document.getElementById('vSNR500').textContent  = (maxTrials>=500 ? snrAvg[idx(500)] : '—').toFixed ? snrAvg[idx(500)].toFixed(1)+' dB' : '—';
+  document.getElementById('vSNR1000').textContent = (maxTrials>=1000 ? snrAvg[idx(1000)] : '—').toFixed ? snrAvg[idx(1000)].toFixed(1)+' dB' : '—';
+  document.getElementById('vR100').textContent    = rAvg[idx(100)].toFixed(3);
+  document.getElementById('vR1000').textContent   = (maxTrials>=1000 ? rAvg[idx(1000)] : '—').toFixed ? rAvg[idx(1000)].toFixed(3) : '—';
+
+  // Find convergence trial (r >= 0.9)
+  let convTrial = '>';
+  for (let i = 0; i < rAvg.length; i++) {
+    if (rAvg[i] >= 0.9) { convTrial = (i+1) + ''; break; }
+  }
+  document.getElementById('vConv').textContent = convTrial === '>' ? `>${maxTrials}` : convTrial + ' trial';
+
+  // SNR range
+  const snrMin = Math.min(...snrAvg.slice(0,20)) - 5;
+  const snrMax = Math.max(...snrAvg) + 3;
+  const snrStep = snrMax - snrMin > 40 ? 10 : 5;
+  const snrTicks = [];
+  for (let v = Math.ceil(snrMin/snrStep)*snrStep; v <= snrMax; v += snrStep)
+    snrTicks.push({ v, lbl: v+'dB' });
+
+  // Draw SNR chart
+  drawChart('cSNR',
+    [
+      { data: snrAvg,  color: '#3fb950', width: 2.5 },
+      { data: snrTheor, color: '#f85149', width: 1.5, dash: [6,4] },
+    ],
+    { min: snrMin, max: snrMax, ticks: snrTicks },
+    'SNR (dB)', 'Jumlah Trial (N)', xScale, maxTrials,
+    [
+      { y: snrAvg[idx(100)], color:'rgba(63,185,80,0.4)', dash:[3,4], label:`N=100: ${snrAvg[idx(100)].toFixed(1)}dB` },
+    ]
+  );
+
+  // Draw Pearson chart
+  drawChart('cPearson',
+    [
+      { data: rAvg,    color: '#ffa657', width: 2.5 },
+      { data: rTheor,  color: '#f85149', width: 1.5, dash: [6,4] },
+    ],
+    { min: -0.2, max: 1.05, ticks: [-0.2, 0, 0.2, 0.4, 0.6, 0.8, 0.9, 1.0].map(v=>({v,lbl:v.toFixed(1)})) },
+    'Pearson r', 'Jumlah Trial (N)', xScale, maxTrials,
+    [
+      { y: 0.9, color:'rgba(63,185,80,0.5)', dash:[5,4], label:'r = 0.9 (konvergen)' },
+      { y: 0.0, color:'rgba(139,148,158,0.2)', dash:[2,4] },
+    ]
+  );
+
+  document.getElementById('progFill').style.width = '100%';
+  btn.className = 'primary'; btn.textContent = '▶ Jalankan Ulang';
+}
+
+document.getElementById('btnRun').addEventListener('click', run);
+window.addEventListener('resize', () => { if (simData) document.getElementById('btnRun').click(); });
+
+// ── Auto-load dari dummy.json ─────────────────────────────────
+function interpLog(milestones, values, n) {
+  if (n <= milestones[0]) return values[0];
+  if (n >= milestones[milestones.length-1]) return values[values.length-1];
+  for (let i = 0; i < milestones.length-1; i++) {
+    if (n >= milestones[i] && n <= milestones[i+1]) {
+      const t = (Math.log(n) - Math.log(milestones[i])) /
+                (Math.log(milestones[i+1]) - Math.log(milestones[i]));
+      return values[i] * (1-t) + values[i+1] * t;
+    }
+  }
+  return values[values.length-1];
+}
+
+function drawFromDummy(data) {
+  const MILESTONES = [1, 10, 50, 100, 500, 1000];
+  const snrMil = MILESTONES.map(n => data.snapshots[String(n)].snr[0]);
+  const rMil   = MILESTONES.map(n => data.snapshots[String(n)].pearson_r[0]);
+  const maxTrials = 1000;
+  const xScale = document.getElementById('selXscale').value;
+
+  // Bangun kurva 1-1000 dari interpolasi log-linear antara 6 milestone
+  let seed = 12345;
+  const rng = () => { seed = (seed * 1664525 + 1013904223) & 0xffffffff; return (seed >>> 0) / 0xffffffff - 0.5; };
+
+  const snrAvg = Array.from({length: maxTrials}, (_, i) => {
+    return interpLog(MILESTONES, snrMil, i+1) + rng() * 0.6;
+  });
+  const rAvg = Array.from({length: maxTrials}, (_, i) => {
+    return Math.max(-1, Math.min(1, interpLog(MILESTONES, rMil, i+1) + rng() * 0.015));
+  });
+
+  simData = { snrAvg, rAvg, maxTrials };
+
+  // Kurva teoritis (dikalibrasi ke N=100 titik data)
+  const c = snrMil[3] - 10*Math.log10(100); // offset dari N=100
+  const snrTheor = Array.from({length: maxTrials}, (_, i) => 10*Math.log10(i+1) + c);
+  const rTheor   = Array.from({length: maxTrials}, (_, i) => 1 - 1/(0.5*Math.sqrt(i+1)+1));
+
+  // Info cards
+  const idx = n => Math.min(n-1, maxTrials-1);
+  document.getElementById('vSNR100').textContent  = snrAvg[idx(100)].toFixed(1) + ' dB';
+  document.getElementById('vSNR500').textContent  = snrAvg[idx(500)].toFixed(1) + ' dB';
+  document.getElementById('vSNR1000').textContent = snrAvg[idx(1000)].toFixed(1) + ' dB';
+  document.getElementById('vR100').textContent    = rAvg[idx(100)].toFixed(3);
+  document.getElementById('vR1000').textContent   = rAvg[idx(1000)].toFixed(3);
+  let convTrial = `>${maxTrials}`;
+  for (let i = 0; i < rAvg.length; i++) { if (rAvg[i] >= 0.9) { convTrial = (i+1)+' trial'; break; } }
+  document.getElementById('vConv').textContent = convTrial;
+
+  const snrMin = Math.min(...snrAvg) - 3, snrMax = Math.max(...snrAvg) + 3;
+  const snrStep = (snrMax - snrMin) > 40 ? 10 : 5;
+  const snrTicks = [];
+  for (let v = Math.ceil(snrMin/snrStep)*snrStep; v <= snrMax; v += snrStep)
+    snrTicks.push({ v, lbl: v.toFixed(0)+'dB' });
+
+  drawChart('cSNR',
+    [{ data: snrAvg, color:'#3fb950', width:2.5 },
+     { data: snrTheor, color:'#f85149', width:1.5, dash:[6,4] }],
+    { min: snrMin, max: snrMax, ticks: snrTicks },
+    'SNR (dB)', 'Jumlah Trial (N)', xScale, maxTrials,
+    [{ y: snrAvg[idx(100)], color:'rgba(63,185,80,0.4)', dash:[3,4], label:`N=100: ${snrAvg[idx(100)].toFixed(1)}dB` }]
+  );
+  drawChart('cPearson',
+    [{ data: rAvg, color:'#ffa657', width:2.5 },
+     { data: rTheor, color:'#f85149', width:1.5, dash:[6,4] }],
+    { min: -0.3, max: 1.05, ticks: [-0.2,0,0.2,0.4,0.6,0.8,0.9,1.0].map(v=>({v,lbl:v.toFixed(1)})) },
+    'Pearson r', 'Jumlah Trial (N)', xScale, maxTrials,
+    [{ y: 0.9, color:'rgba(63,185,80,0.5)', dash:[5,4], label:'r = 0.9 (konvergen)' },
+     { y: 0.0, color:'rgba(139,148,158,0.2)', dash:[2,4] }]
+  );
+  document.getElementById('progFill').style.width = '100%';
+  document.getElementById('btnRun').className = 'primary';
+  document.getElementById('btnRun').textContent = '▶ Jalankan Ulang';
+}
+
+fetch('data/dummy.json')
+  .then(r => r.json())
+  .then(data => { drawFromDummy(data); console.log('[SNR-PEARSON] dummy.json loaded OK'); })
+  .catch(() => {
+    // Fallback placeholder
+    ['cSNR','cPearson'].forEach(id => {
+      const c = document.getElementById(id);
+      const dpr = window.devicePixelRatio||1;
+      c.width = c.offsetWidth*dpr; c.height = c.offsetHeight*dpr;
+      const ctx = c.getContext('2d'); ctx.scale(dpr,dpr);
+      ctx.fillStyle='#8b949e'; ctx.font='12px sans-serif'; ctx.textAlign='center';
+      ctx.fillText('Tekan ▶ Jalankan untuk memulai', c.offsetWidth/2/dpr, c.offsetHeight/2/dpr);
+    });
+  });
+</script>
+</body>
+</html>

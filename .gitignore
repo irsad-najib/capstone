@@ -1,11 +1,122 @@
-.pio
+# ============================================================
+#  OS / editor
+# ============================================================
+.DS_Store
+**/.DS_Store
+Thumbs.db
+*.swp
+
+# Claude Code local settings (per-mesin, jangan di-share)
+.claude/settings.local.json
+**/.claude/settings.local.json
+
+# VS Code: buang cache C/C++, simpan settings.json & extensions.json
 .vscode/.browse.c_cpp.db*
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 .vscode/ipch
+**/.vscode/.browse.c_cpp.db*
+**/.vscode/c_cpp_properties.json
+**/.vscode/launch.json
+**/.vscode/ipch
 
-# Build output binary
-capstone
+# ============================================================
+#  Firmware (PlatformIO / ESP-IDF)
+# ============================================================
+.pio/
+**/.pio/
+build/
+**/build/
+sdkconfig.old
+*.elf
+*.map
+*.bin
+*.hex
 
-# Temporary files
+# get-platformio.py = installer vendored, bukan source project
+get-platformio.py
+
+# ============================================================
+#  Go backend
+# ============================================================
+# binary hasil `go build` (nama folder = nama binary)
+backend/server
+neurosound-backend/neurosound-backend
+/capstone
+# air live-reload
 tmp/
+**/tmp/
+*.test
+*.out
+
+# ============================================================
+#  Python
+# ============================================================
+.venv/
+**/.venv/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+
+# ============================================================
+#  Frontend (Next.js)
+# ============================================================
+node_modules/
+**/node_modules/
+.next/
+**/.next/
+out/
+.vercel
+*.tsbuildinfo
+next-env.d.ts
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+coverage/
+
+# ============================================================
+#  Secrets — .env.example TETAP di-track
+# ============================================================
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ============================================================
+#  Data hasil rekaman / sesi (regenerate-able, bisa besar)
+# ============================================================
+data/
+backend/eeg_abr_*.json
+*.csv
+*.edf
+*.log
+
+# ============================================================
+#  Aset besar — di atas limit GitHub, simpan di Drive
+# ============================================================
+# Blender source ~190 MB/file (limit GitHub 100 MB).
+# Yang di-track: build_headphone_v2.py + docs/*.png preview.
+*.blend
+*.blend1
+*.zip
+*.7z
+*.tar.gz
+
+# ============================================================
+#  Dokumen LaTeX / laporan akademik (privat: ttd, turnitin, dsb)
+# ============================================================
+Dokumen/
+c251/
+Dokuimen c-251/
+
+# artefak build LaTeX (kalau nanti .tex jadi di-track)
+*.aux
+*.lof
+*.lot
+*.toc
+*.synctex.gz
+*.fls
+*.fdb_latexmk
+*.bbl
+*.blg

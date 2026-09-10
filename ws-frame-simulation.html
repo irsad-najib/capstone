@@ -1,0 +1,858 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Simulasi Aliran Frame WebSocket — ESP32 ABR System</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --accent: #58a6ff;
+    --green: #3fb950;
+    --yellow: #d29922;
+    --red: #f85149;
+    --stim-bg: rgba(210,153,34,0.18);
+    --stim-border: #d29922;
+    --purple: #bc8cff;
+    --font-mono: 'Courier New', Courier, monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 13px;
+    min-height: 100vh;
+    padding: 16px;
+  }
+
+  /* ── Header ── */
+  .header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+  }
+  .header h1 {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: 0.02em;
+  }
+  .badge {
+    padding: 2px 8px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .badge-green  { background: rgba(63,185,80,.2);  color: var(--green);  border: 1px solid rgba(63,185,80,.4); }
+  .badge-blue   { background: rgba(88,166,255,.15); color: var(--accent); border: 1px solid rgba(88,166,255,.3); }
+  .badge-yellow { background: rgba(210,153,34,.2);  color: var(--yellow); border: 1px solid rgba(210,153,34,.4); }
+
+  /* ── Status bar ── */
+  .status-bar {
+    display: flex;
+    gap: 20px;
+    padding: 8px 14px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .stat-item { display: flex; gap: 6px; align-items: center; }
+  .stat-label { color: var(--muted); font-size: 11px; }
+  .stat-value { font-weight: 700; font-family: var(--font-mono); font-size: 12px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+  /* ── Controls ── */
+  .controls {
+    display: flex;
+    gap: 8px;
+    margin-left: auto;
+    align-items: center;
+  }
+  button {
+    padding: 5px 14px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: #21262d;
+    color: var(--text);
+    font-size: 12px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all .15s;
+  }
+  button:hover { background: #30363d; }
+  button.active { background: rgba(88,166,255,.15); border-color: var(--accent); color: var(--accent); }
+  button#btnPlay { background: rgba(63,185,80,.15); border-color: var(--green); color: var(--green); }
+  button#btnPlay.paused { background: rgba(248,81,73,.12); border-color: var(--red); color: var(--red); }
+  select {
+    padding: 4px 8px;
+    background: #21262d;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  /* ── Layout ── */
+  .panels {
+    display: grid;
+    grid-template-rows: auto auto;
+    gap: 12px;
+  }
+
+  /* ── Panel shared ── */
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .panel-header {
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(255,255,255,.02);
+  }
+  .panel-title { font-weight: 700; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+
+  /* ── Canvas panel ── */
+  #waveCanvas {
+    display: block;
+    width: 100%;
+    height: 200px;
+    background: #0a0e14;
+  }
+
+  .canvas-wrap { position: relative; }
+  .canvas-wrap .y-labels {
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 54px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 4px 6px;
+    pointer-events: none;
+  }
+  .y-label { font-size: 10px; color: var(--muted); font-family: var(--font-mono); }
+
+  /* ── JSON frame panel ── */
+  .frame-legend {
+    display: flex;
+    gap: 14px;
+    margin-left: auto;
+    font-size: 11px;
+    align-items: center;
+  }
+  .legend-dot { width: 10px; height: 10px; border-radius: 2px; }
+  .legend-stim { background: var(--stim-bg); border: 1px solid var(--stim-border); }
+  .legend-normal { background: rgba(88,166,255,.08); border: 1px solid rgba(88,166,255,.25); }
+
+  #frameLog {
+    height: 280px;
+    overflow-y: auto;
+    padding: 8px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    scroll-behavior: smooth;
+  }
+
+  .frame-row {
+    display: grid;
+    grid-template-columns: 52px 110px 1fr;
+    gap: 8px;
+    padding: 5px 10px;
+    border-radius: 5px;
+    border: 1px solid transparent;
+    transition: opacity .2s;
+    align-items: center;
+    animation: fadeIn .12s ease-out;
+  }
+  @keyframes fadeIn { from{opacity:0;transform:translateY(-4px)} to{opacity:1;transform:none} }
+
+  .frame-row.normal {
+    background: rgba(88,166,255,.05);
+    border-color: rgba(88,166,255,.12);
+  }
+  .frame-row.stim {
+    background: var(--stim-bg);
+    border-color: var(--stim-border);
+    box-shadow: 0 0 8px rgba(210,153,34,.15);
+  }
+
+  .fr-idx  { color: var(--muted); font-size: 10.5px; text-align: right; }
+  .fr-raw  { }
+  .fr-json { color: #79c0ff; }
+
+  .fr-raw .key  { color: var(--muted); }
+  .fr-raw .val-t { color: #ffa657; }
+  .fr-raw .val-r { color: var(--green); }
+  .fr-raw .val-r.neg { color: var(--red); }
+  .fr-raw .val-s0 { color: var(--muted); }
+  .fr-raw .val-s1 { color: var(--yellow); font-weight: 800; }
+
+  .fr-json .key   { color: var(--muted); }
+  .fr-json .str   { color: #a5d6ff; }
+  .fr-json .num   { color: #79c0ff; }
+  .fr-json .stim-flag { color: var(--yellow); font-weight: 700; }
+
+  /* stim marker */
+  .stim-marker {
+    display: inline-block;
+    padding: 1px 5px;
+    background: rgba(210,153,34,.3);
+    border: 1px solid var(--yellow);
+    border-radius: 3px;
+    color: var(--yellow);
+    font-size: 10px;
+    font-weight: 800;
+    margin-left: 6px;
+  }
+
+  /* ── ABR epoch detail ── */
+  .epoch-panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  #epochCanvas {
+    display: block;
+    width: 100%;
+    height: 150px;
+    background: #0a0e14;
+  }
+
+  /* ── Footer ── */
+  .footer {
+    margin-top: 12px;
+    padding: 8px 14px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 11px;
+    color: var(--muted);
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .footer b { color: var(--text); }
+  .ws-path { font-family: var(--font-mono); color: var(--accent); }
+</style>
+</head>
+<body>
+
+<!-- ── Header ── -->
+<div class="header">
+  <h1>📡 Simulasi Aliran Frame WebSocket — Sistem ABR ESP32</h1>
+  <span class="badge badge-blue">ADS1115 @ 860 SPS</span>
+  <span class="badge badge-green">Port 8080</span>
+  <span class="badge badge-yellow">PCM5102A ~11 klik/dtk</span>
+  <div class="controls">
+    <label style="color:var(--muted);font-size:11px">Kecepatan:</label>
+    <select id="speed">
+      <option value="0.5">0.5×</option>
+      <option value="1" selected>1×</option>
+      <option value="2">2×</option>
+      <option value="5">5×</option>
+    </select>
+    <label style="color:var(--muted);font-size:11px">dB:</label>
+    <select id="dbLevel">
+      <option value="60">60 dB</option>
+      <option value="70">70 dB</option>
+      <option value="80" selected>80 dB</option>
+      <option value="90">90 dB</option>
+    </select>
+    <button id="btnPlay">⏸ Jeda</button>
+    <button id="btnClear">🗑 Reset</button>
+  </div>
+</div>
+
+<!-- ── Status Bar ── -->
+<div class="status-bar">
+  <div class="stat-item"><div class="dot"></div></div>
+  <div class="stat-item">
+    <span class="stat-label">Device</span>
+    <span class="stat-value" style="color:var(--accent)">esp32-abr-001</span>
+  </div>
+  <div class="stat-item">
+    <span class="stat-label">Frame Terkirim</span>
+    <span class="stat-value" id="statFrames">0</span>
+  </div>
+  <div class="stat-item">
+    <span class="stat-label">SPS (aktual)</span>
+    <span class="stat-value" id="statSPS" style="color:var(--green)">—</span>
+  </div>
+  <div class="stat-item">
+    <span class="stat-label">Stimulus</span>
+    <span class="stat-value" id="statStims" style="color:var(--yellow)">0</span>
+  </div>
+  <div class="stat-item">
+    <span class="stat-label">Trials ABR</span>
+    <span class="stat-value" id="statTrials" style="color:var(--purple)">0</span>
+  </div>
+  <div class="stat-item">
+    <span class="stat-label">Raw Terakhir</span>
+    <span class="stat-value" id="statRaw" style="color:var(--green)">—</span>
+  </div>
+  <div class="stat-item">
+    <span class="stat-label">mV</span>
+    <span class="stat-value" id="statMv">—</span>
+  </div>
+  <div class="stat-item">
+    <span class="stat-label">Level Stimulus</span>
+    <span class="stat-value" id="statDb" style="color:var(--yellow)">80 dB</span>
+  </div>
+</div>
+
+<!-- ── Panels ── -->
+<div class="panels">
+
+  <!-- Panel Atas: Raw ADC Waveform -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="panel-title">📈 Raw ADC — ADS1115 Channel 0 (mV)</span>
+      <span class="badge badge-blue" style="margin-left:auto;font-size:10px">860 SPS</span>
+      <span style="font-size:11px;color:var(--muted);margin-left:8px">Window: 500ms terakhir</span>
+    </div>
+    <div class="canvas-wrap">
+      <canvas id="waveCanvas" height="200"></canvas>
+      <div class="y-labels" id="yLabels"></div>
+    </div>
+  </div>
+
+  <!-- Panel Bawah: JSON Frame Log -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="panel-title">🗂 Frame JSON per Paket WebSocket</span>
+      <div class="frame-legend">
+        <div style="display:flex;gap:4px;align-items:center">
+          <div class="legend-dot legend-stim"></div>
+          <span style="color:var(--yellow)">Frame stimulus aktif (s:1)</span>
+        </div>
+        <div style="display:flex;gap:4px;align-items:center">
+          <div class="legend-dot legend-normal"></div>
+          <span style="color:var(--muted)">Frame biasa (s:0)</span>
+        </div>
+      </div>
+    </div>
+    <div id="frameLog"></div>
+  </div>
+
+  <!-- Panel ABR Average -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="panel-title">🧠 Rata-rata ABR (Running Average, Ch-0)</span>
+      <span style="font-size:11px;color:var(--muted);margin-left:auto">Epoch: 50ms post-stimulus</span>
+      <span class="badge badge-blue" style="margin-left:8px;font-size:10px" id="qualityBadge">Noise</span>
+    </div>
+    <canvas id="epochCanvas" height="150"></canvas>
+  </div>
+
+</div>
+
+<!-- ── Footer ── -->
+<div class="footer">
+  <div><b>Aliran:</b> ADS1115 (SPI→I2C) → ESP32 → <span class="ws-path">ws://10.106.14.216:8080/ws?id=esp32-abr-001</span> → Go Backend</div>
+  <div><b>Format compact:</b> <span style="font-family:var(--font-mono);color:var(--green)">{"t":&lt;ms&gt;,"r":&lt;int16&gt;,"s":&lt;0|1&gt;}</span></div>
+  <div><b>Stimulus:</b> PCM5102A klik setiap ~91ms (≈11/dtk)</div>
+  <div><b>LSB→µV:</b> raw × (4096/32768) = raw × 0.125 mV</div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────────────────────
+//  SIMULASI ENGINE — berdasarkan firmware ads1115/src/main.ino
+//  dan backend/api/ws.go
+// ─────────────────────────────────────────────────────────────
+
+const SPS_TARGET     = 860;    // ADS1115 @ 860SPS
+const STIM_INTERVAL  = 91;     // ms — sama dengan STIM_INTERVAL_MS di firmware
+const EPOCH_MS       = 50;     // ms
+const MAX_FRAMES_LOG = 80;     // baris frame di panel bawah
+const WAVE_WINDOW_MS = 500;    // tampilkan 500ms terakhir
+const LSB_TO_MV      = 4096.0 / 32768.0; // 0.125 mV/LSB (GAIN_ONE)
+
+// ─── State ───────────────────────────────────────────────────
+let running     = true;
+let frameCount  = 0;
+let stimCount   = 0;
+let trialCount  = 0;
+let speedMul    = 1;
+let dbLevel     = 80;
+
+// ABR epoch accumulator (50ms @ 860SPS ≈ 43 samples)
+const EPOCH_SAMPLES = Math.round(SPS_TARGET * EPOCH_MS / 1000); // 43
+let abrAvg     = new Float64Array(EPOCH_SAMPLES);
+let epochBuf   = [];   // sampel dalam epoch saat ini
+let inEpoch    = false;
+let epochTimer = 0;    // countdown samples
+
+// Waveform ring buffer (500ms ≈ 430 samples)
+const WAVE_SAMPLES = Math.round(SPS_TARGET * WAVE_WINDOW_MS / 1000);
+let waveBuf   = new Float64Array(WAVE_SAMPLES);
+let waveStim  = new Uint8Array(WAVE_SAMPLES);  // 1 = stimulus frame
+let waveHead  = 0;
+
+// SPS counter
+let spsCounter = 0;
+let lastSpsTs  = performance.now();
+let actualSps  = 0;
+
+// ── Dummy data (dari data/dummy.json) ────────────────────────
+let dummyFrames = null;
+let dummyIdx    = 0;
+
+// Simulated signal state
+let sig = {
+  noise: 0,        // random walk
+  t: 0,            // time counter (samples)
+  stimLeft: 0,     // samples remaining in ABR response
+  abr: [           // ABR wave peaks: [delay_samples, amplitude_mV, width]
+    {d: 5,  a: 0.18, w: 2},   // Wave I   (~1ms)
+    {d: 15, a: 0.12, w: 3},   // Wave III (~3ms)
+    {d: 22, a: 0.28, w: 4},   // Wave V   (~5ms)
+    {d: 30, a: 0.08, w: 3},   // Wave VI  (~7ms)
+  ],
+  stimAge: 0,
+  lastStimSample: -9999,
+};
+
+// ─── Signal generation ────────────────────────────────────────
+function generateSample(isStim) {
+  // 1) Background EEG-like noise (µV scale → mV)
+  sig.noise += (Math.random() - 0.5) * 0.04;
+  sig.noise *= 0.985; // drift back to zero
+
+  // 2) 50Hz power-line artefak ringan
+  const plf = Math.sin(2 * Math.PI * 50 * sig.t / SPS_TARGET) * 0.015;
+
+  // 3) ABR response setelah stimulus
+  let abr_signal = 0;
+  if (isStim) {
+    sig.stimAge = 0;
+    sig.lastStimSample = sig.t;
+  }
+  if (sig.t - sig.lastStimSample < 60) {
+    const age = sig.t - sig.lastStimSample;
+    for (const w of sig.abr) {
+      const dt = age - w.d;
+      abr_signal += w.a * Math.exp(-dt * dt / (2 * w.w * w.w));
+    }
+    // Alternating polarity (ABR klik polaritas bergantian)
+    if (stimCount % 2 === 1) abr_signal = -abr_signal;
+  }
+
+  // 4) Alpha wave bursts sesekali (8-12 Hz) — latar belakang EEG
+  const alpha = Math.sin(2 * Math.PI * 10 * sig.t / SPS_TARGET) *
+                0.08 * Math.max(0, Math.sin(2 * Math.PI * 0.3 * sig.t / SPS_TARGET));
+
+  sig.t++;
+  const mv = sig.noise + plf + abr_signal + alpha;
+
+  // Convert mV → int16 (ADS1115: 0.125 mV/LSB)
+  const raw = Math.round(mv / LSB_TO_MV);
+  const clipped = Math.max(-32768, Math.min(32767, raw));
+  return clipped;
+}
+
+// ─── Waveform canvas ─────────────────────────────────────────
+const waveCanvas = document.getElementById('waveCanvas');
+const waveCtx    = waveCanvas.getContext('2d');
+
+function resizeCanvas() {
+  waveCanvas.width  = waveCanvas.offsetWidth * devicePixelRatio;
+  waveCanvas.height = waveCanvas.offsetHeight * devicePixelRatio;
+  waveCtx.scale(devicePixelRatio, devicePixelRatio);
+
+  epochCanvas.width  = epochCanvas.offsetWidth * devicePixelRatio;
+  epochCanvas.height = epochCanvas.offsetHeight * devicePixelRatio;
+  epochCtx.scale(devicePixelRatio, devicePixelRatio);
+}
+window.addEventListener('resize', () => { resizeCanvas(); drawWave(); drawEpoch(); });
+
+function drawWave() {
+  const W = waveCanvas.offsetWidth;
+  const H = waveCanvas.offsetHeight;
+  const ctx = waveCtx;
+  ctx.clearRect(0, 0, W, H);
+
+  // Background grid
+  ctx.strokeStyle = '#1c2430';
+  ctx.lineWidth = 1;
+  for (let y = 0; y <= 4; y++) {
+    const yy = H * y / 4;
+    ctx.beginPath(); ctx.moveTo(0, yy); ctx.lineTo(W, yy); ctx.stroke();
+  }
+  for (let x = 0; x <= 10; x++) {
+    const xx = W * x / 10;
+    ctx.beginPath(); ctx.moveTo(xx, 0); ctx.lineTo(xx, H); ctx.stroke();
+  }
+
+  // Scale: auto dari data aktual (±200 LSB ≈ ±25mV untuk dummy data)
+  // SCALE = max LSB value yang ditampilkan penuh
+  const SCALE = dummyFrames ? 220 : 16;
+  const mid = H / 2;
+
+  // Draw waveform + stim markers
+  let firstPt = true;
+  ctx.beginPath();
+  ctx.strokeStyle = '#3fb950';
+  ctx.lineWidth = 1.5;
+
+  for (let i = 0; i < WAVE_SAMPLES; i++) {
+    const idx = (waveHead + i) % WAVE_SAMPLES;
+    const raw = waveBuf[idx];
+    const x = W * i / WAVE_SAMPLES;
+    const y = mid - (raw / SCALE) * mid * 0.85;
+
+    if (firstPt) { ctx.moveTo(x, y); firstPt = false; }
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // Stimulus vertical lines (yellow)
+  for (let i = 0; i < WAVE_SAMPLES; i++) {
+    const idx = (waveHead + i) % WAVE_SAMPLES;
+    if (waveStim[idx]) {
+      const x = W * i / WAVE_SAMPLES;
+      ctx.save();
+      ctx.strokeStyle = 'rgba(210,153,34,0.7)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+      ctx.restore();
+
+      // Label
+      ctx.fillStyle = 'rgba(210,153,34,0.9)';
+      ctx.font = `bold 9px 'Courier New'`;
+      ctx.fillText('S', x + 2, 12);
+    }
+  }
+
+  // Y-axis labels (dinamis sesuai SCALE)
+  ctx.fillStyle = '#8b949e';
+  ctx.font = '10px Courier New';
+  const mvFull = (SCALE * LSB_TO_MV).toFixed(0);
+  const mvHalf = (SCALE * LSB_TO_MV / 2).toFixed(0);
+  const labels = [`+${mvFull}mV`, `+${mvHalf}mV`, '0', `-${mvHalf}mV`, `-${mvFull}mV`];
+  labels.forEach((lbl, i) => {
+    ctx.fillText(lbl, 4, H * i / 4 + 12);
+  });
+
+  // Zero line
+  ctx.strokeStyle = 'rgba(139,148,158,0.3)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4,4]);
+  ctx.beginPath(); ctx.moveTo(0, mid); ctx.lineTo(W, mid); ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+// ─── Epoch / ABR canvas ───────────────────────────────────────
+const epochCanvas = document.getElementById('epochCanvas');
+const epochCtx    = epochCanvas.getContext('2d');
+
+function drawEpoch() {
+  const W = epochCanvas.offsetWidth;
+  const H = epochCanvas.offsetHeight;
+  const ctx = epochCtx;
+  ctx.clearRect(0, 0, W, H);
+
+  if (trialCount === 0) {
+    ctx.fillStyle = '#8b949e';
+    ctx.font = '12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Menunggu trials ABR…', W / 2, H / 2);
+    ctx.textAlign = 'left';
+    return;
+  }
+
+  // Grid
+  ctx.strokeStyle = '#1c2430'; ctx.lineWidth = 1;
+  for (let y = 0; y <= 4; y++) {
+    const yy = H * y / 4;
+    ctx.beginPath(); ctx.moveTo(0, yy); ctx.lineTo(W, yy); ctx.stroke();
+  }
+
+  // Scale: ±0.5 mV
+  const SCALE = 0.5;
+  const mid   = H / 2;
+
+  // ABR waveform
+  ctx.beginPath();
+  ctx.strokeStyle = '#bc8cff';
+  ctx.lineWidth   = 2;
+  let first = true;
+  for (let i = 0; i < EPOCH_SAMPLES; i++) {
+    const mv = abrAvg[i] * LSB_TO_MV;
+    const x = W * i / EPOCH_SAMPLES;
+    const y = mid - (mv / SCALE) * mid * 0.8;
+    if (first) { ctx.moveTo(x, y); first = false; }
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // Zero line
+  ctx.strokeStyle = 'rgba(139,148,158,0.3)';
+  ctx.lineWidth = 1; ctx.setLineDash([4,4]);
+  ctx.beginPath(); ctx.moveTo(0, mid); ctx.lineTo(W, mid); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // X labels
+  ctx.fillStyle = '#8b949e';
+  ctx.font = '10px Courier New';
+  const msPerSample = 1000 / SPS_TARGET;
+  [0, 10, 20, 30, 40, 50].forEach(ms => {
+    const x = W * ms / EPOCH_MS;
+    ctx.fillText(ms + 'ms', x + 2, H - 4);
+  });
+
+  // Wave labels (I, III, V)
+  const waveLabels = [
+    { ms: 1.0,  label: 'I'   },
+    { ms: 3.5,  label: 'III' },
+    { ms: 5.5,  label: 'V'   },
+  ];
+  ctx.fillStyle = 'rgba(188,140,255,0.8)';
+  ctx.font = 'bold 10px Courier New';
+  waveLabels.forEach(w => {
+    const x = W * w.ms / EPOCH_MS;
+    ctx.fillText(w.label, x, 14);
+  });
+}
+
+// ─── Frame log DOM ────────────────────────────────────────────
+const frameLog = document.getElementById('frameLog');
+let frameRows  = [];
+
+function addFrameRow(frameIdx, raw, isStim, ts, processed) {
+  if (frameRows.length >= MAX_FRAMES_LOG) {
+    const old = frameRows.shift();
+    if (old.parentNode) old.parentNode.removeChild(old);
+  }
+
+  const mv   = (raw * LSB_TO_MV).toFixed(3);
+  const uvMv = (raw * LSB_TO_MV / 1.0).toFixed(4); // mV (gain AD620=1000 → µV/1000)
+  const mvDisp = parseFloat(mv) >= 0
+    ? `<span class="val-r">+${mv}</span>`
+    : `<span class="val-r neg">${mv}</span>`;
+
+  const div = document.createElement('div');
+  div.className = 'frame-row ' + (isStim ? 'stim' : 'normal');
+
+  // Format JSON compact (format asli firmware)
+  const jsonCompact = `{"t":${ts},"r":${raw},"s":${isStim ? 1 : 0}}`;
+
+  // Format JSON verbose (fallback format ADS1299)
+  const jsonVerbose = `{"type":"eeg","device":"esp32-abr-001","ch":[${raw},0,0,0,0,0,0,0]}`;
+
+  div.innerHTML = `
+    <div class="fr-idx">#${String(frameIdx).padStart(5,'0')}</div>
+    <div class="fr-raw">
+      <span class="key">t:</span><span class="val-t">${ts}</span>
+      <span class="key"> r:</span>${mvDisp}mV
+      <span class="key"> s:</span>${isStim
+        ? `<span class="val-s1">1<span class="stim-marker">🔔 STIM</span></span>`
+        : `<span class="val-s0">0</span>`}
+    </div>
+    <div class="fr-json">
+      <span class="key">[TX→WS] </span>
+      <span style="color:${isStim ? 'var(--yellow)' : '#79c0ff'}">
+        ${jsonCompact}
+      </span>
+    </div>
+  `;
+
+  frameLog.appendChild(div);
+  frameRows.push(div);
+  frameLog.scrollTop = frameLog.scrollHeight;
+  return div;
+}
+
+// ─── Main simulation tick ─────────────────────────────────────
+let lastStimMs      = 0;
+let simElapsedMs    = 0;
+let lastTickTime    = performance.now();
+let lastStatUpdate  = performance.now();
+let pendingStim     = false;
+
+// ABR running average (simplified)
+let epochCollecting = false;
+let epochSamplesCollected = [];
+let epochSampleIdx  = 0;
+
+function tick() {
+  if (!running) return;
+
+  const now     = performance.now();
+  const dtReal  = now - lastTickTime;
+  lastTickTime  = now;
+
+  // Hitung berapa sample harus dihasilkan dalam dt ini
+  const dtSim   = dtReal * speedMul;
+  const samplesToGen = Math.round((SPS_TARGET / 1000) * dtSim);
+
+  for (let i = 0; i < samplesToGen; i++) {
+    simElapsedMs += 1000 / SPS_TARGET;
+
+    // Cek apakah stimulus harus terjadi
+    const isStim = (simElapsedMs - lastStimMs) >= STIM_INTERVAL;
+    if (isStim) {
+      lastStimMs = simElapsedMs;
+      stimCount++;
+      pendingStim = true;
+    }
+
+    const raw    = dummyFrames
+      ? dummyFrames[dummyIdx++ % dummyFrames.length].r
+      : generateSample(isStim);
+    const ts     = Math.round(simElapsedMs);
+    const mv_val = raw * LSB_TO_MV;
+
+    // Waveform buffer
+    waveBuf[waveHead]  = raw;
+    waveStim[waveHead] = isStim ? 1 : 0;
+    waveHead = (waveHead + 1) % WAVE_SAMPLES;
+
+    // ABR epoch extraction (tepat 50ms setelah stimulus)
+    if (isStim) {
+      epochCollecting = true;
+      epochSamplesCollected = [];
+    }
+    if (epochCollecting) {
+      epochSamplesCollected.push(raw);
+      if (epochSamplesCollected.length >= EPOCH_SAMPLES) {
+        epochCollecting = false;
+        trialCount++;
+        // Running average
+        const n = trialCount;
+        for (let j = 0; j < EPOCH_SAMPLES; j++) {
+          abrAvg[j] = (abrAvg[j] * (n - 1) + epochSamplesCollected[j]) / n;
+        }
+      }
+    }
+
+    frameCount++;
+    spsCounter++;
+
+    // Tambah ke frame log (throttle: hanya setiap N frames agar tidak flood)
+    const logEvery = Math.max(1, Math.round(SPS_TARGET / 30 / speedMul));
+    if (frameCount % logEvery === 0 || isStim) {
+      addFrameRow(frameCount, raw, isStim, ts, true);
+    }
+
+    // Update last raw stat
+    document.getElementById('statRaw').textContent = raw;
+    document.getElementById('statMv').textContent  = mv_val.toFixed(3) + ' mV';
+    const rawEl = document.getElementById('statRaw');
+    rawEl.style.color = raw >= 0 ? 'var(--green)' : 'var(--red)';
+  }
+
+  // Stats update tiap ~300ms real
+  if (now - lastStatUpdate >= 300) {
+    const dt = (now - lastStatUpdate) / 1000;
+    actualSps = Math.round(spsCounter / dt);
+    spsCounter = 0;
+    lastStatUpdate = now;
+
+    document.getElementById('statFrames').textContent = frameCount.toLocaleString();
+    document.getElementById('statSPS').textContent    = actualSps + ' SPS';
+    document.getElementById('statStims').textContent  = stimCount;
+    document.getElementById('statTrials').textContent = trialCount;
+
+    // Quality badge
+    const quality = trialCount >= 500 ? 'Konvergen'
+                  : trialCount >= 100 ? 'Mulai Terbentuk'
+                  : 'Noise';
+    const qBadge = document.getElementById('qualityBadge');
+    qBadge.textContent = quality;
+    qBadge.className   = 'badge ' + (
+      trialCount >= 500 ? 'badge-green' :
+      trialCount >= 100 ? 'badge-yellow' : 'badge-blue'
+    );
+    qBadge.style.marginLeft = '8px';
+
+    drawWave();
+    drawEpoch();
+  }
+
+  requestAnimationFrame(tick);
+}
+
+// ─── Controls ─────────────────────────────────────────────────
+document.getElementById('btnPlay').addEventListener('click', function() {
+  running = !running;
+  if (running) {
+    this.textContent = '⏸ Jeda';
+    this.classList.remove('paused');
+    lastTickTime = performance.now();
+    requestAnimationFrame(tick);
+  } else {
+    this.textContent = '▶ Lanjut';
+    this.classList.add('paused');
+  }
+});
+
+document.getElementById('btnClear').addEventListener('click', function() {
+  frameCount = 0; stimCount = 0; trialCount = 0; spsCounter = 0;
+  waveBuf.fill(0); waveStim.fill(0); waveHead = 0;
+  abrAvg.fill(0); epochSamplesCollected = []; epochCollecting = false;
+  frameRows.forEach(r => r.parentNode && r.parentNode.removeChild(r));
+  frameRows = [];
+  simElapsedMs = 0; lastStimMs = 0;
+  sig.t = 0; sig.noise = 0; sig.lastStimSample = -9999;
+  document.getElementById('statFrames').textContent = '0';
+  document.getElementById('statStims').textContent  = '0';
+  document.getElementById('statTrials').textContent = '0';
+  drawWave(); drawEpoch();
+});
+
+document.getElementById('speed').addEventListener('change', function() {
+  speedMul = parseFloat(this.value);
+});
+
+document.getElementById('dbLevel').addEventListener('change', function() {
+  dbLevel = parseInt(this.value);
+  document.getElementById('statDb').textContent = dbLevel + ' dB';
+  // Sesuaikan amplitudo ABR simulasi dengan level dB
+  const scales = { 60: 0.4, 70: 0.6, 80: 1.0, 90: 1.4 };
+  const s = scales[dbLevel] || 1.0;
+  sig.abr = [
+    {d: 5,  a: 0.18 * s, w: 2},
+    {d: 15, a: 0.12 * s, w: 3},
+    {d: 22, a: 0.28 * s, w: 4},
+    {d: 30, a: 0.08 * s, w: 3},
+  ];
+});
+
+// ─── Init ─────────────────────────────────────────────────────
+resizeCanvas();
+requestAnimationFrame(tick);
+
+// Load dummy.json → pakai raw r values sebagai sinyal nyata
+fetch('data/dummy.json')
+  .then(r => r.json())
+  .then(d => { dummyFrames = d.ws_frames; console.log('[WS-SIM] dummy loaded:', dummyFrames.length, 'frames'); })
+  .catch(() => console.log('[WS-SIM] dummy.json tidak ditemukan, pakai generator'));
+
+</script>
+</body>
+</html>

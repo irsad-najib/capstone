@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Neurosound - Scan History</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "on-surface-variant": "#43474c",
+                    "tertiary-fixed": "#ffdcc4",
+                    "secondary-fixed-dim": "#9dd2b5",
+                    "on-surface": "#1b1c1d",
+                    "surface": "#faf9fb",
+                    "secondary-fixed": "#b8efd1",
+                    "surface-bright": "#faf9fb",
+                    "tertiary-fixed-dim": "#ffb781",
+                    "on-primary": "#ffffff",
+                    "secondary-container": "#b8efd1",
+                    "inverse-on-surface": "#f2f0f2",
+                    "primary-container": "#1c354a",
+                    "surface-variant": "#e3e2e4",
+                    "secondary": "#366850",
+                    "on-error-container": "#93000a",
+                    "outline": "#73777d",
+                    "outline-variant": "#c3c7cd",
+                    "primary": "#032034",
+                    "on-secondary-container": "#3c6e56",
+                    "on-secondary-fixed-variant": "#1c503a",
+                    "on-primary-container": "#859eb7",
+                    "on-background": "#1b1c1d",
+                    "inverse-surface": "#2f3032",
+                    "primary-fixed": "#cde5ff",
+                    "tertiary": "#331600",
+                    "on-tertiary-container": "#e5832b",
+                    "on-primary-fixed-variant": "#31495f",
+                    "on-secondary": "#ffffff",
+                    "surface-container-highest": "#e3e2e4",
+                    "primary-fixed-dim": "#b0c9e4",
+                    "on-secondary-fixed": "#002114",
+                    "surface-tint": "#496178",
+                    "on-tertiary-fixed": "#2f1400",
+                    "on-tertiary-fixed-variant": "#703800",
+                    "surface-container-high": "#e9e8ea",
+                    "background": "#faf9fb",
+                    "surface-container-low": "#f4f3f5",
+                    "on-primary-fixed": "#011d31",
+                    "surface-container-lowest": "#ffffff",
+                    "error-container": "#ffdad6",
+                    "on-tertiary": "#ffffff",
+                    "surface-container": "#efedef",
+                    "error": "#ba1a1a",
+                    "inverse-primary": "#b0c9e4",
+                    "on-error": "#ffffff",
+                    "tertiary-container": "#522800",
+                    "surface-dim": "#dbd9db"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "margin-desktop": "48px",
+                    "xl": "32px",
+                    "base": "4px",
+                    "xs": "4px",
+                    "lg": "24px",
+                    "gutter": "24px",
+                    "margin-mobile": "16px",
+                    "sm": "8px",
+                    "md": "16px"
+            },
+            "fontFamily": {
+                    "label-sm": ["Inter"],
+                    "label-md": ["Inter"],
+                    "body-sm": ["Inter"],
+                    "headline-lg": ["Inter"],
+                    "body-md": ["Inter"],
+                    "headline-sm": ["Inter"],
+                    "headline-lg-mobile": ["Inter"],
+                    "body-lg": ["Inter"],
+                    "headline-md": ["Inter"]
+            },
+            "fontSize": {
+                    "label-sm": ["11px", {"lineHeight": "14px", "fontWeight": "500"}],
+                    "label-md": ["12px", {"lineHeight": "16px", "fontWeight": "600"}],
+                    "body-sm": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                    "headline-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                    "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                    "headline-sm": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                    "headline-lg-mobile": ["24px", {"lineHeight": "32px", "fontWeight": "700"}],
+                    "body-lg": ["18px", {"lineHeight": "28px", "fontWeight": "400"}],
+                    "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            display: inline-block;
+            vertical-align: middle;
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #faf9fb;
+        }
+        .hide-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .hide-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background">
+<div class="flex h-screen overflow-hidden">
+<!-- SideNavBar -->
+<aside class="h-full w-64 hidden lg:flex flex-col border-r border-outline-variant bg-surface dark:bg-inverse-surface">
+<div class="p-lg">
+<h1 class="font-headline-sm text-headline-sm font-bold text-primary dark:text-inverse-primary">Neurosound</h1>
+<p class="font-label-md text-label-md text-on-surface-variant">Clinical Portal</p>
+</div>
+<nav class="flex-1 px-sm mt-md space-y-xs overflow-y-auto hide-scrollbar">
+<!-- Dashboard -->
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors active:scale-95 duration-100" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span class="font-label-md text-label-md">Dashboard</span>
+</a>
+<!-- Start Scan -->
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors active:scale-95 duration-100" href="#">
+<span class="material-symbols-outlined" data-icon="medical_services">medical_services</span>
+<span class="font-label-md text-label-md">Start Scan</span>
+</a>
+<!-- History (ACTIVE) -->
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-primary dark:text-inverse-primary border-r-4 border-primary font-bold bg-surface-container transition-colors active:scale-95 duration-100" href="#">
+<span class="material-symbols-outlined" data-icon="history" style="font-variation-settings: 'FILL' 1;">history</span>
+<span class="font-label-md text-label-md">History</span>
+</a>
+<!-- Device Status -->
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors active:scale-95 duration-100" href="#">
+<span class="material-symbols-outlined" data-icon="settings_remote">settings_remote</span>
+<span class="font-label-md text-label-md">Device Status</span>
+</a>
+<!-- Settings -->
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors active:scale-95 duration-100" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="font-label-md text-label-md">Settings</span>
+</a>
+</nav>
+<div class="p-md border-t border-outline-variant">
+<div class="flex items-center gap-md p-sm rounded-xl bg-surface-container-low">
+<div class="w-10 h-10 rounded-full bg-primary-container flex items-center justify-center text-on-primary-container font-bold">
+                        DR
+                    </div>
+<div class="overflow-hidden">
+<p class="font-label-md text-label-md text-on-surface truncate">Dr. Sarah Chen</p>
+<p class="font-label-sm text-label-sm text-on-surface-variant truncate">Neuro-Audiologist</p>
+</div>
+</div>
+</div>
+</aside>
+<!-- Main Content Area -->
+<div class="flex-1 flex flex-col min-w-0 bg-background">
+<!-- TopNavBar -->
+<header class="flex justify-between items-center w-full px-margin-mobile md:px-margin-desktop h-16 sticky top-0 z-50 bg-surface border-b border-outline-variant">
+<div class="flex items-center gap-md">
+<span class="lg:hidden material-symbols-outlined text-primary cursor-pointer" data-icon="menu">menu</span>
+<h2 class="font-headline-md text-headline-md font-extrabold text-primary hidden md:block">Neurosound</h2>
+</div>
+<div class="flex-1 max-w-xl px-lg hidden md:block">
+<div class="relative">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" data-icon="search">search</span>
+<input class="w-full bg-surface-container-lowest border border-outline-variant rounded-full py-2 pl-10 pr-4 focus:ring-2 focus:ring-primary focus:border-transparent outline-none text-body-md font-body-md" placeholder="Search sessions, patients..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-md">
+<div class="flex gap-sm">
+<button class="w-10 h-10 flex items-center justify-center text-on-surface-variant hover:bg-surface-container-low rounded-full transition-colors cursor-pointer active:opacity-70">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+</button>
+<button class="w-10 h-10 flex items-center justify-center text-on-surface-variant hover:bg-surface-container-low rounded-full transition-colors cursor-pointer active:opacity-70">
+<span class="material-symbols-outlined" data-icon="account_circle">account_circle</span>
+</button>
+</div>
+</div>
+</header>
+<!-- Main Canvas -->
+<main class="flex-1 overflow-y-auto p-margin-mobile md:p-margin-desktop space-y-lg pb-24">
+<!-- Page Header -->
+<div class="flex flex-col md:flex-row md:items-center justify-between gap-md">
+<div>
+<h3 class="font-headline-lg text-headline-lg text-on-surface">History</h3>
+<p class="font-body-md text-body-md text-on-surface-variant">Manage and review all patient scan data.</p>
+</div>
+<div class="flex gap-sm">
+<button class="flex items-center gap-xs px-md py-2 bg-primary text-on-primary rounded-xl font-label-md text-label-md hover:opacity-90 transition-all active:scale-95 shadow-sm">
+<span class="material-symbols-outlined text-[18px]" data-icon="download">download</span>
+                            Export
+                        </button>
+</div>
+</div>
+<!-- Simplified Search and Filters Bar -->
+<div class="flex flex-col md:flex-row gap-md items-center">
+<div class="flex-1 w-full relative">
+<span class="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant" data-icon="search">search</span>
+<input class="w-full bg-surface-container-lowest border border-outline-variant rounded-xl py-3 pl-12 pr-4 focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-body-md text-body-md shadow-sm transition-all" placeholder="Search by patient name, ID, or result..." type="text"/>
+</div>
+<div class="flex w-full md:w-auto gap-md">
+<select class="flex-1 md:flex-none bg-surface-container-lowest border border-outline-variant rounded-xl py-3 px-4 font-label-md text-label-md outline-none focus:ring-2 focus:ring-primary shadow-sm min-w-[140px]">
+<option>Result: All</option>
+<option>Normal</option>
+<option>Abnormal</option>
+<option>Inconclusive</option>
+</select>
+<select class="flex-1 md:flex-none bg-surface-container-lowest border border-outline-variant rounded-xl py-3 px-4 font-label-md text-label-md outline-none focus:ring-2 focus:ring-primary shadow-sm min-w-[140px]">
+<option>Last 30 Days</option>
+<option>Last 90 Days</option>
+<option>This Year</option>
+</select>
+</div>
+</div>
+<!-- Simplified Stats Strip -->
+<div class="flex flex-wrap gap-md">
+<div class="flex items-center gap-sm bg-surface-container-low px-md py-2 rounded-full border border-outline-variant">
+<span class="w-2 h-2 rounded-full bg-secondary"></span>
+<span class="font-label-md text-label-md">842 Normal</span>
+</div>
+<div class="flex items-center gap-sm bg-surface-container-low px-md py-2 rounded-full border border-outline-variant">
+<span class="w-2 h-2 rounded-full bg-error"></span>
+<span class="font-label-md text-label-md">312 Abnormal</span>
+</div>
+<div class="flex items-center gap-sm bg-surface-container-low px-md py-2 rounded-full border border-outline-variant">
+<span class="w-2 h-2 rounded-full bg-on-tertiary-container"></span>
+<span class="font-label-md text-label-md">130 Inconclusive</span>
+</div>
+</div>
+<!-- Simplified Session History Table -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-2xl overflow-hidden shadow-sm">
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="bg-surface-container-low text-on-surface-variant font-label-md text-label-md border-b border-outline-variant">
+<th class="px-lg py-md font-semibold">Patient</th>
+<th class="px-lg py-md font-semibold">Date</th>
+<th class="px-lg py-md font-semibold">Result</th>
+<th class="px-lg py-md font-semibold text-right">Actions</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-outline-variant">
+<!-- Row 1 -->
+<tr class="hover:bg-surface-container-low/30 transition-colors">
+<td class="px-lg py-lg">
+<div class="flex flex-col">
+<span class="font-body-md text-body-md font-bold text-on-surface">Elena Rodriguez</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">ID: 442-12</span>
+</div>
+</td>
+<td class="px-lg py-lg font-body-sm text-body-sm text-on-surface-variant">
+                                        Oct 24, 2024
+</td>
+<td class="px-lg py-lg">
+<span class="inline-flex items-center gap-1.5 bg-secondary-container text-on-secondary-container px-3 py-1 rounded-full font-label-sm text-label-sm font-medium">
+<span class="w-1.5 h-1.5 bg-secondary rounded-full"></span>
+                                            Normal
+                                        </span>
+</td>
+<td class="px-lg py-lg text-right">
+<button class="text-primary hover:bg-primary-container/20 px-md py-2 rounded-lg font-label-md text-label-md transition-colors">
+                                            View
+</button>
+</td>
+</tr>
+<!-- Row 2 -->
+<tr class="hover:bg-surface-container-low/30 transition-colors">
+<td class="px-lg py-lg">
+<div class="flex flex-col">
+<span class="font-body-md text-body-md font-bold text-on-surface">Marcus Thorne</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">ID: 291-55</span>
+</div>
+</td>
+<td class="px-lg py-lg font-body-sm text-body-sm text-on-surface-variant">
+                                        Oct 23, 2024
+</td>
+<td class="px-lg py-lg">
+<span class="inline-flex items-center gap-1.5 bg-error-container text-on-error-container px-3 py-1 rounded-full font-label-sm text-label-sm font-medium">
+<span class="w-1.5 h-1.5 bg-error rounded-full"></span>
+                                            Abnormal
+                                        </span>
+</td>
+<td class="px-lg py-lg text-right">
+<button class="text-primary hover:bg-primary-container/20 px-md py-2 rounded-lg font-label-md text-label-md transition-colors">
+                                            View
+</button>
+</td>
+</tr>
+<!-- Row 3 -->
+<tr class="hover:bg-surface-container-low/30 transition-colors">
+<td class="px-lg py-lg">
+<div class="flex flex-col">
+<span class="font-body-md text-body-md font-bold text-on-surface">Sarah J. Miller</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">ID: 112-88</span>
+</div>
+</td>
+<td class="px-lg py-lg font-body-sm text-body-sm text-on-surface-variant">
+                                        Oct 23, 2024
+</td>
+<td class="px-lg py-lg">
+<span class="inline-flex items-center gap-1.5 bg-tertiary-fixed text-on-tertiary-fixed-variant px-3 py-1 rounded-full font-label-sm text-label-sm font-medium">
+<span class="w-1.5 h-1.5 bg-on-tertiary-container rounded-full"></span>
+                                            Inconclusive
+                                        </span>
+</td>
+<td class="px-lg py-lg text-right">
+<button class="text-primary hover:bg-primary-container/20 px-md py-2 rounded-lg font-label-md text-label-md transition-colors">
+                                            View
+</button>
+</td>
+</tr>
+<!-- Row 4 -->
+<tr class="hover:bg-surface-container-low/30 transition-colors">
+<td class="px-lg py-lg">
+<div class="flex flex-col">
+<span class="font-body-md text-body-md font-bold text-on-surface">James Wilson</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">ID: 673-42</span>
+</div>
+</td>
+<td class="px-lg py-lg font-body-sm text-body-sm text-on-surface-variant">
+                                        Oct 22, 2024
+</td>
+<td class="px-lg py-lg">
+<span class="inline-flex items-center gap-1.5 bg-secondary-container text-on-secondary-container px-3 py-1 rounded-full font-label-sm text-label-sm font-medium">
+<span class="w-1.5 h-1.5 bg-secondary rounded-full"></span>
+                                            Normal
+                                        </span>
+</td>
+<td class="px-lg py-lg text-right">
+<button class="text-primary hover:bg-primary-container/20 px-md py-2 rounded-lg font-label-md text-label-md transition-colors">
+                                            View
+</button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- Pagination Footer -->
+<div class="px-lg py-md border-t border-outline-variant flex items-center justify-between">
+<p class="font-label-sm text-label-sm text-on-surface-variant">Showing 4 of 1,284 results</p>
+<div class="flex gap-xs">
+<button class="p-2 hover:bg-surface-container rounded-full transition-colors disabled:opacity-30" disabled="">
+<span class="material-symbols-outlined" data-icon="chevron_left">chevron_left</span>
+</button>
+<button class="w-10 h-10 flex items-center justify-center bg-primary text-on-primary rounded-full font-label-md text-label-md shadow-sm">1</button>
+<button class="w-10 h-10 flex items-center justify-center hover:bg-surface-container rounded-full font-label-md text-label-md transition-colors">2</button>
+<button class="w-10 h-10 flex items-center justify-center hover:bg-surface-container rounded-full font-label-md text-label-md transition-colors">3</button>
+<button class="p-2 hover:bg-surface-container rounded-full transition-colors">
+<span class="material-symbols-outlined" data-icon="chevron_right">chevron_right</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Footer -->
+<footer class="w-full py-6 flex flex-col md:flex-row justify-between items-center bg-surface-container-low border border-outline-variant px-6 rounded-2xl">
+<p class="font-label-sm text-label-sm text-on-surface-variant">© 2024 Neurosound Medical Systems. FDA Cleared.</p>
+<div class="flex gap-lg mt-4 md:mt-0">
+<a class="font-label-sm text-label-sm text-on-surface-variant hover:text-primary transition-colors" href="#">Support</a>
+<a class="font-label-sm text-label-sm text-on-surface-variant hover:text-primary transition-colors" href="#">Privacy</a>
+<a class="font-label-sm text-label-sm text-on-surface-variant hover:text-primary transition-colors" href="#">Logout</a>
+</div>
+</footer>
+</main>
+</div>
+</div>
+<!-- BottomNavBar for Mobile -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 py-3 bg-surface border-t border-outline-variant shadow-lg lg:hidden">
+<a class="flex flex-col items-center justify-center text-on-surface-variant px-2 transition-transform" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span class="font-label-sm text-label-sm">Home</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant px-2 transition-transform" href="#">
+<span class="material-symbols-outlined" data-icon="medical_services">medical_services</span>
+<span class="font-label-sm text-label-sm">Scan</span>
+</a>
+<a class="flex flex-col items-center justify-center bg-secondary-container text-on-secondary-container rounded-xl px-4 py-2 transition-transform" href="#">
+<span class="material-symbols-outlined" data-icon="history" style="font-variation-settings: 'FILL' 1;">history</span>
+<span class="font-label-sm text-label-sm">History</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant px-2 transition-transform" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="font-label-sm text-label-sm">Settings</span>
+</a>
+</nav>
+<script>
+        // Simple Search Filter Simulation
+        const searchInput = document.querySelector('input[placeholder*="Search by patient"]');
+        if(searchInput) {
+            searchInput.addEventListener('input', (e) => {
+                const term = e.target.value.toLowerCase();
+                document.querySelectorAll('tbody tr').forEach(row => {
+                    const text = row.innerText.toLowerCase();
+                    row.style.display = text.includes(term) ? '' : 'none';
+                });
+            });
+        }
+    </script>
+</body></html>

@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>NeuroScan ABR Results</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .waveform-container {
+            background-image: radial-gradient(circle at 2px 2px, rgba(115, 119, 125, 0.1) 1px, transparent 0);
+            background-size: 24px 24px;
+        }
+        .glass-effect {
+            backdrop-filter: blur(8px);
+            background: rgba(250, 249, 251, 0.8);
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "tertiary-container": "#522800",
+                        "outline": "#73777d",
+                        "on-primary": "#ffffff",
+                        "primary-container": "#1c354a",
+                        "on-tertiary": "#ffffff",
+                        "on-surface": "#1b1c1d",
+                        "on-secondary-container": "#3c6e56",
+                        "error-container": "#ffdad6",
+                        "secondary-container": "#b8efd1",
+                        "surface-container-low": "#f4f3f5",
+                        "on-primary-fixed-variant": "#31495f",
+                        "on-tertiary-container": "#e5832b",
+                        "on-surface-variant": "#43474c",
+                        "inverse-surface": "#2f3032",
+                        "on-tertiary-fixed": "#2f1400",
+                        "secondary-fixed-dim": "#9dd2b5",
+                        "on-background": "#1b1c1d",
+                        "surface-tint": "#496178",
+                        "inverse-on-surface": "#f2f0f2",
+                        "background": "#faf9fb",
+                        "surface-dim": "#dbd9db",
+                        "primary": "#032034",
+                        "surface-container": "#efedef",
+                        "on-primary-fixed": "#011d31",
+                        "primary-fixed": "#cde5ff",
+                        "on-error-container": "#93000a",
+                        "on-error": "#ffffff",
+                        "tertiary": "#331600",
+                        "surface-container-high": "#e9e8ea",
+                        "surface-container-highest": "#e3e2e4",
+                        "primary-fixed-dim": "#b0c9e4",
+                        "on-secondary-fixed-variant": "#1c503a",
+                        "on-secondary": "#ffffff",
+                        "tertiary-fixed-dim": "#ffb781",
+                        "on-primary-container": "#859eb7",
+                        "on-secondary-fixed": "#002114",
+                        "surface": "#faf9fb",
+                        "secondary": "#366850",
+                        "on-tertiary-fixed-variant": "#703800",
+                        "tertiary-fixed": "#ffdcc4",
+                        "surface-container-lowest": "#ffffff",
+                        "error": "#ba1a1a",
+                        "outline-variant": "#c3c7cd",
+                        "secondary-fixed": "#b8efd1",
+                        "surface-variant": "#e3e2e4",
+                        "surface-bright": "#faf9fb",
+                        "inverse-primary": "#b0c9e4"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "base": "4px",
+                        "sm": "8px",
+                        "xl": "32px",
+                        "gutter": "24px",
+                        "margin-desktop": "48px",
+                        "md": "16px",
+                        "lg": "24px",
+                        "margin-mobile": "16px",
+                        "xs": "4px"
+                    },
+                    "fontFamily": {
+                        "headline-sm": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "body-md": ["Inter"],
+                        "label-sm": ["Inter"],
+                        "headline-lg-mobile": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "body-sm": ["Inter"],
+                        "headline-lg": ["Inter"],
+                        "label-md": ["Inter"]
+                    },
+                    "fontSize": {
+                        "headline-sm": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                        "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                        "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                        "label-sm": ["11px", {"lineHeight": "14px", "fontWeight": "500"}],
+                        "headline-lg-mobile": ["24px", {"lineHeight": "32px", "fontWeight": "700"}],
+                        "body-lg": ["18px", {"lineHeight": "28px", "fontWeight": "400"}],
+                        "body-sm": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                        "headline-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                        "label-md": ["12px", {"lineHeight": "16px", "fontWeight": "600"}]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-surface font-body-md overflow-x-hidden">
+<!-- Top Navigation -->
+<header class="fixed top-0 left-0 w-full z-50 bg-surface border-b border-outline-variant flex justify-between items-center px-md h-16">
+<div class="flex items-center gap-sm">
+<button class="p-sm hover:bg-surface-container-low rounded-full transition-colors active:opacity-80">
+<span class="material-symbols-outlined text-primary">arrow_back</span>
+</button>
+<span class="font-headline-sm text-headline-sm text-primary">Scan Results</span>
+</div>
+<div class="flex items-center gap-base">
+<span class="material-symbols-outlined text-on-surface-variant p-sm cursor-pointer hover:bg-surface-container-low rounded-full transition-colors">notifications</span>
+<span class="material-symbols-outlined text-on-surface-variant p-sm cursor-pointer hover:bg-surface-container-low rounded-full transition-colors">help_outline</span>
+</div>
+</header>
+<main class="mt-16 pb-24 px-md max-w-md mx-auto">
+<!-- Diagnostic Status Header -->
+<section class="py-lg animate-in fade-in slide-in-from-bottom-4 duration-700">
+<div class="bg-secondary-container rounded-xl p-lg flex flex-col items-center text-center border border-secondary/20">
+<span class="font-label-md text-label-md text-on-secondary-container uppercase tracking-widest mb-base">Analysis Status</span>
+<h1 class="font-headline-lg-mobile text-headline-lg-mobile text-on-secondary-container mb-xs">NORMAL</h1>
+<div class="flex items-center gap-xs text-secondary">
+<span class="material-symbols-outlined text-sm" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+<span class="font-label-md text-label-md">Auditary Brainstem Response Stable</span>
+</div>
+</div>
+</section>
+<!-- Tabbed Navigation -->
+<div class="flex border-b border-outline-variant mb-lg">
+<button class="flex-1 py-md font-label-md text-label-md text-primary border-b-2 border-primary transition-all" id="tab-summary" onclick="switchTab('summary')">SUMMARY</button>
+<button class="flex-1 py-md font-label-md text-label-md text-on-surface-variant transition-all hover:bg-surface-container-low" id="tab-detailed" onclick="switchTab('detailed')">DETAILED METRICS</button>
+</div>
+<!-- Summary Content -->
+<div class="space-y-lg block" id="content-summary">
+<!-- Key Indicators Grid -->
+<div class="grid grid-cols-2 gap-md">
+<div class="bg-surface-container-lowest border border-outline-variant p-md rounded-xl">
+<div class="flex items-center gap-xs mb-sm">
+<span class="material-symbols-outlined text-on-surface-variant text-md">timer</span>
+<span class="font-label-md text-label-md text-on-surface-variant">Latency</span>
+</div>
+<div class="flex items-baseline gap-xs">
+<span class="font-headline-md text-headline-md text-primary">5.2</span>
+<span class="font-label-md text-label-md text-on-surface-variant">ms</span>
+</div>
+<div class="mt-base h-1 w-full bg-surface-container rounded-full overflow-hidden">
+<div class="h-full bg-secondary w-[85%] rounded-full"></div>
+</div>
+</div>
+<div class="bg-surface-container-lowest border border-outline-variant p-md rounded-xl">
+<div class="flex items-center gap-xs mb-sm">
+<span class="material-symbols-outlined text-on-surface-variant text-md">signal_cellular_alt</span>
+<span class="font-label-md text-label-md text-on-surface-variant">SNR</span>
+</div>
+<div class="flex items-baseline gap-xs">
+<span class="font-headline-md text-headline-md text-primary">12.4</span>
+<span class="font-label-md text-label-md text-on-surface-variant">dB</span>
+</div>
+<div class="mt-base h-1 w-full bg-surface-container rounded-full overflow-hidden">
+<div class="h-full bg-secondary w-[92%] rounded-full"></div>
+</div>
+</div>
+</div>
+<!-- Waveform Card -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden">
+<div class="p-md flex justify-between items-center border-b border-outline-variant">
+<h3 class="font-label-md text-label-md text-primary uppercase">ABR Waveform Analysis</h3>
+<span class="material-symbols-outlined text-on-surface-variant text-md">fullscreen</span>
+</div>
+<div class="h-48 waveform-container relative p-md flex items-center justify-center">
+<img alt="ABR Waveform" class="w-full h-full object-contain" data-alt="A clean and professional medical ABR waveform visualization. The line graph features precise Jungle Teal curves depicting neural response waves against a minimalist white background with a light grey grid. The overall aesthetic is clinical and high-fidelity, following a modern healthcare user interface style with focus on clarity and data precision for neurological diagnostic experts." src="https://lh3.googleusercontent.com/aida-public/AB6AXuA3sJmCQT_wbLtMAz6lRh6A42WLmQevk2kOY4FSgWAOm6unjs0V4c3_Zxq32-HLZuNNPuBsyB-VD6LOi3Ch_HaVmBXQ4Wtojg-XYzRFhFCssHmNmIN0mr3vV_zgHBehmIyy017x5EzX_LbAycJs_2C7zp2rlK1lahOdYjyEvZJNyz7dtZ6eXvD7odKfgtInhr7QJqr35RNOYKcKuAqbnKlzE5WJAJT4uDNE7hb9vtSCkXVWjXW1jzyh6bDzU4gzEAY_NEpg-MHHuQ0-"/>
+<!-- Wave Labels -->
+<div class="absolute inset-0 p-md flex pointer-events-none">
+<span class="absolute top-1/4 left-1/4 bg-primary text-on-primary text-[10px] px-1 rounded">Wave I</span>
+<span class="absolute bottom-1/4 left-1/2 bg-primary text-on-primary text-[10px] px-1 rounded">Wave V</span>
+</div>
+</div>
+<div class="p-sm bg-surface-container-low flex justify-center gap-lg">
+<div class="flex items-center gap-xs">
+<div class="w-2 h-2 rounded-full bg-secondary"></div>
+<span class="text-[10px] text-on-surface-variant uppercase font-bold">Left Ear (320Hz)</span>
+</div>
+<div class="flex items-center gap-xs">
+<div class="w-2 h-2 rounded-full bg-outline"></div>
+<span class="text-[10px] text-on-surface-variant uppercase font-bold">Baseline</span>
+</div>
+</div>
+</div>
+<!-- Detailed Stats Table-ish -->
+<div class="space-y-sm">
+<div class="flex justify-between items-center p-md bg-surface-container-low rounded-lg">
+<span class="font-body-sm text-body-sm text-on-surface-variant">Stimulus Level</span>
+<span class="font-body-sm text-body-sm font-bold text-primary">85 dB nHL</span>
+</div>
+<div class="flex justify-between items-center p-md bg-surface-container-low rounded-lg">
+<span class="font-body-sm text-body-sm text-on-surface-variant">Click Polarity</span>
+<span class="font-body-sm text-body-sm font-bold text-primary">Rarefaction</span>
+</div>
+<div class="flex justify-between items-center p-md bg-surface-container-low rounded-lg">
+<span class="font-body-sm text-body-sm text-on-surface-variant">Averages Count</span>
+<span class="font-body-sm text-body-sm font-bold text-primary">2,048</span>
+</div>
+</div>
+</div>
+<!-- Detailed Metrics Content (Hidden by default) -->
+<div class="hidden space-y-md" id="content-detailed">
+<div class="p-md border border-outline-variant rounded-xl space-y-md">
+<h4 class="font-label-md text-label-md text-primary uppercase border-b border-outline-variant pb-xs">Neural Synchrony</h4>
+<div class="flex justify-between">
+<span class="text-body-sm text-on-surface-variant">Wave V Latency</span>
+<span class="text-body-sm font-bold">5.62 ms</span>
+</div>
+<div class="flex justify-between">
+<span class="text-body-sm text-on-surface-variant">Wave I-V Interval</span>
+<span class="text-body-sm font-bold">3.98 ms</span>
+</div>
+<div class="flex justify-between">
+<span class="text-body-sm text-on-surface-variant">V/I Amplitude Ratio</span>
+<span class="text-body-sm font-bold">2.41</span>
+</div>
+</div>
+<div class="p-md border border-outline-variant rounded-xl space-y-md">
+<h4 class="font-label-md text-label-md text-primary uppercase border-b border-outline-variant pb-xs">Environmental Noise</h4>
+<div class="flex justify-between">
+<span class="text-body-sm text-on-surface-variant">EEG Residual Noise</span>
+<span class="text-body-sm font-bold text-secondary">24 nV</span>
+</div>
+<div class="flex justify-between">
+<span class="text-body-sm text-on-surface-variant">A-weighted Level</span>
+<span class="text-body-sm font-bold">12 dB(A)</span>
+</div>
+</div>
+</div>
+</main>
+<!-- Bottom Actions -->
+<div class="fixed bottom-0 left-0 w-full glass-effect border-t border-outline-variant p-md flex gap-md z-50">
+<button class="flex-1 h-12 border border-primary text-primary font-label-md text-label-md rounded-lg hover:bg-surface-container-low transition-all active:scale-95 flex items-center justify-center gap-sm">
+<span class="material-symbols-outlined text-md">share</span>
+            EXPORT PDF
+        </button>
+<button class="flex-1 h-12 bg-primary text-on-primary font-label-md text-label-md rounded-lg hover:opacity-90 transition-all active:scale-95 flex items-center justify-center gap-sm shadow-lg">
+<span class="material-symbols-outlined text-md" style="font-variation-settings: 'FILL' 1;">save</span>
+            SAVE RECORD
+        </button>
+</div>
+<!-- Tab Logic Script -->
+<script>
+        function switchTab(tab) {
+            const summaryBtn = document.getElementById('tab-summary');
+            const detailedBtn = document.getElementById('tab-detailed');
+            const summaryContent = document.getElementById('content-summary');
+            const detailedContent = document.getElementById('content-detailed');
+
+            if (tab === 'summary') {
+                summaryBtn.classList.add('text-primary', 'border-primary', 'border-b-2');
+                summaryBtn.classList.remove('text-on-surface-variant');
+                detailedBtn.classList.remove('text-primary', 'border-primary', 'border-b-2');
+                detailedBtn.classList.add('text-on-surface-variant');
+                
+                summaryContent.classList.remove('hidden');
+                detailedContent.classList.add('hidden');
+            } else {
+                detailedBtn.classList.add('text-primary', 'border-primary', 'border-b-2');
+                detailedBtn.classList.remove('text-on-surface-variant');
+                summaryBtn.classList.remove('text-primary', 'border-primary', 'border-b-2');
+                summaryBtn.classList.add('text-on-surface-variant');
+
+                detailedContent.classList.remove('hidden');
+                summaryContent.classList.add('hidden');
+            }
+        }
+    </script>
+</body></html>

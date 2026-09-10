@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Clinician Dashboard - Neurosound</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        body {
+            font-family: 'Inter', sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        /* Custom scrollbar for a cleaner look */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #c3c7cd;
+            border-radius: 10px;
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-surface-variant": "#43474c",
+                      "tertiary-fixed": "#ffdcc4",
+                      "secondary-fixed-dim": "#9dd2b5",
+                      "on-surface": "#1b1c1d",
+                      "surface": "#faf9fb",
+                      "secondary-fixed": "#b8efd1",
+                      "surface-bright": "#faf9fb",
+                      "tertiary-fixed-dim": "#ffb781",
+                      "on-primary": "#ffffff",
+                      "secondary-container": "#b8efd1",
+                      "inverse-on-surface": "#f2f0f2",
+                      "primary-container": "#1c354a",
+                      "surface-variant": "#e3e2e4",
+                      "secondary": "#366850",
+                      "on-error-container": "#93000a",
+                      "outline": "#73777d",
+                      "outline-variant": "#c3c7cd",
+                      "primary": "#032034",
+                      "on-secondary-container": "#3c6e56",
+                      "on-secondary-fixed-variant": "#1c503a",
+                      "on-primary-container": "#859eb7",
+                      "on-background": "#1b1c1d",
+                      "inverse-surface": "#2f3032",
+                      "primary-fixed": "#cde5ff",
+                      "tertiary": "#331600",
+                      "on-tertiary-container": "#e5832b",
+                      "on-primary-fixed-variant": "#31495f",
+                      "on-secondary": "#ffffff",
+                      "surface-container-highest": "#e3e2e4",
+                      "primary-fixed-dim": "#b0c9e4",
+                      "on-secondary-fixed": "#002114",
+                      "surface-tint": "#496178",
+                      "on-tertiary-fixed": "#2f1400",
+                      "on-tertiary-fixed-variant": "#703800",
+                      "surface-container-high": "#e9e8ea",
+                      "background": "#faf9fb",
+                      "surface-container-low": "#f4f3f5",
+                      "on-primary-fixed": "#011d31",
+                      "surface-container-lowest": "#ffffff",
+                      "error-container": "#ffdad6",
+                      "on-tertiary": "#ffffff",
+                      "surface-container": "#efedef",
+                      "error": "#ba1a1a",
+                      "inverse-primary": "#b0c9e4",
+                      "on-error": "#ffffff",
+                      "tertiary-container": "#522800",
+                      "surface-dim": "#dbd9db"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "margin-desktop": "64px",
+                      "xl": "40px",
+                      "base": "4px",
+                      "xs": "4px",
+                      "lg": "24px",
+                      "gutter": "32px",
+                      "margin-mobile": "20px",
+                      "sm": "8px",
+                      "md": "16px"
+              },
+              "fontFamily": {
+                      "label-sm": ["Inter"],
+                      "label-md": ["Inter"],
+                      "body-sm": ["Inter"],
+                      "headline-lg": ["Inter"],
+                      "body-md": ["Inter"],
+                      "headline-sm": ["Inter"],
+                      "headline-lg-mobile": ["Inter"],
+                      "body-lg": ["Inter"],
+                      "headline-md": ["Inter"]
+              },
+              "fontSize": {
+                      "label-sm": ["11px", {"lineHeight": "14px", "fontWeight": "500"}],
+                      "label-md": ["12px", {"lineHeight": "16px", "fontWeight": "600"}],
+                      "body-sm": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                      "headline-lg": ["36px", {"lineHeight": "44px", "letterSpacing": "-0.03em", "fontWeight": "700"}],
+                      "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                      "headline-sm": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                      "headline-lg-mobile": ["26px", {"lineHeight": "34px", "fontWeight": "700"}],
+                      "body-lg": ["18px", {"lineHeight": "28px", "fontWeight": "400"}],
+                      "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}]
+              }
+            },
+          },
+        }
+    </script>
+</head>
+<body class="bg-surface text-on-surface">
+<div class="flex h-screen overflow-hidden">
+<!-- SideNavBar - Streamlined -->
+<aside class="h-full w-20 lg:w-64 hidden lg:flex flex-col border-r border-outline-variant bg-primary text-on-primary">
+<div class="p-lg lg:mb-md">
+<h1 class="hidden lg:block font-headline-sm text-headline-sm font-bold text-primary-fixed tracking-tight">Neurosound</h1>
+<div class="lg:hidden w-10 h-10 bg-primary-fixed rounded-lg flex items-center justify-center mx-auto">
+<span class="material-symbols-outlined text-primary font-bold">hearing</span>
+</div>
+<p class="hidden lg:block font-label-md text-label-md opacity-60">Clinical Portal</p>
+</div>
+<nav class="flex-1 px-md">
+<ul class="space-y-sm">
+<li class="flex items-center gap-md p-md text-primary-fixed bg-primary-container rounded-lg cursor-pointer transition-all active:scale-95 duration-100 group">
+<span class="material-symbols-outlined" data-icon="dashboard">grid_view</span>
+<span class="hidden lg:block font-label-md text-label-md">Dashboard</span>
+</li>
+<li class="flex items-center gap-md p-md text-on-primary-container/70 hover:text-on-primary hover:bg-white/5 transition-all rounded-lg cursor-pointer active:scale-95 duration-100">
+<span class="material-symbols-outlined" data-icon="medical_services">monitor_heart</span>
+<span class="hidden lg:block font-label-md text-label-md">Start Scan</span>
+</li>
+<li class="flex items-center gap-md p-md text-on-primary-container/70 hover:text-on-primary hover:bg-white/5 transition-all rounded-lg cursor-pointer active:scale-95 duration-100">
+<span class="material-symbols-outlined" data-icon="history">history</span>
+<span class="hidden lg:block font-label-md text-label-md">History</span>
+</li>
+<li class="flex items-center gap-md p-md text-on-primary-container/70 hover:text-on-primary hover:bg-white/5 transition-all rounded-lg cursor-pointer active:scale-95 duration-100">
+<span class="material-symbols-outlined" data-icon="settings_remote">sensors</span>
+<span class="hidden lg:block font-label-md text-label-md">Device Status</span>
+</li>
+</ul>
+</nav>
+<div class="p-lg mt-auto border-t border-white/5 flex items-center gap-md">
+<img alt="Clinician" class="w-10 h-10 rounded-full border border-white/10" data-alt="A professional headshot of a medical clinician wearing a modern white lab coat, captured in a brightly lit clinical setting with soft blue and teal secondary lighting. The focus is sharp, conveying authority and trust with a warm, approachable expression." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAmu_SvrNupDWqB4bXN_9GsBGiAsSRsAzB_WT9l_iY5St0_DE6PiAB_DZAWsuuRhXDMmftHwNEy9Ixh5VOJExmTFJEZQ2BmfS5y7yEtjS-TlL22LoytAZlErwyhUwE_K8yTWOTu_sF9FqnSt_3oD3qDDzTYe-xIkuaW5iu2t3svY9v1PzRRoxcCLVyKeS4QDbyLNInRSeEQfEWbMAz89_zW7zRgrSl95YjPgg33ZxCDuTmw3jCksv5JAMd1g1uKzfyMqSjdFVV-yoaY"/>
+<div class="hidden lg:block">
+<p class="font-label-md text-label-md font-bold">Dr. Aris Thorne</p>
+<p class="font-label-sm text-label-sm opacity-50">Audiologist</p>
+</div>
+</div>
+</aside>
+<main class="flex-1 flex flex-col min-w-0 overflow-y-auto">
+<!-- TopNavBar - Clean & Minimal -->
+<header class="flex justify-between items-center w-full px-margin-mobile md:px-margin-desktop h-20 sticky top-0 z-50 bg-surface/90 backdrop-blur-xl border-b border-outline-variant/50">
+<div class="flex items-center gap-xl">
+<button class="lg:hidden p-sm hover:bg-surface-container-low rounded-full">
+<span class="material-symbols-outlined" data-icon="menu">menu</span>
+</button>
+<div class="hidden md:flex items-center bg-surface-container-low px-lg py-sm rounded-xl border border-outline-variant w-96 transition-all focus-within:border-primary focus-within:ring-4 focus-within:ring-primary-container/20">
+<span class="material-symbols-outlined text-on-surface-variant text-[20px]" data-icon="search">search</span>
+<input class="bg-transparent border-none focus:ring-0 font-body-sm text-body-sm text-on-surface w-full ml-sm" placeholder="Search records..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-lg">
+<div class="hidden sm:flex items-center gap-xs px-md py-sm bg-secondary-container text-on-secondary-container rounded-lg font-label-md text-label-md font-bold">
+<span class="material-symbols-outlined text-[18px]" data-icon="person">fingerprint</span>
+    Patient: 882-941
+</div>
+<div class="flex items-center gap-md">
+<button class="w-10 h-10 flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high rounded-full transition-colors relative">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+<span class="absolute top-2 right-2 w-2 h-2 bg-error rounded-full border-2 border-surface"></span>
+</button>
+<button class="w-10 h-10 flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high rounded-full transition-colors">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+</button>
+</div>
+</div>
+</header>
+<div class="p-margin-mobile md:p-margin-desktop space-y-xl max-w-7xl mx-auto w-full">
+<!-- Welcome Section - More Whitespace -->
+<section class="flex flex-col md:flex-row md:items-center justify-between gap-lg mb-xl">
+<div>
+<h2 class="font-headline-lg text-headline-lg text-primary tracking-tight">Clinician Dashboard</h2>
+<p class="font-body-md text-body-md text-on-surface-variant mt-sm">Environment noise: <span class="text-secondary font-semibold">12dB (Optimal)</span></p>
+</div>
+<button class="bg-primary text-on-primary px-xl py-lg rounded-xl font-label-md text-label-md flex items-center gap-sm shadow-xl shadow-primary/20 hover:bg-primary-container hover:text-on-primary-container transition-all active:scale-95">
+<span class="material-symbols-outlined text-[20px]" data-icon="add">person_add</span>
+                        New Patient Entry
+                    </button>
+</section>
+<!-- Metric Cards - Streamlined Design -->
+<section class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-gutter">
+<!-- Total Scans -->
+<div class="bg-surface-container-lowest border border-outline-variant/60 p-lg rounded-2xl flex flex-col justify-between h-36 hover:border-secondary transition-all group">
+<div class="flex justify-between items-start">
+<span class="font-label-md text-label-md text-on-surface-variant uppercase tracking-widest text-[10px]">Total Scans (Month)</span>
+<span class="material-symbols-outlined text-outline group-hover:text-secondary transition-colors" data-icon="query_stats">analytics</span>
+</div>
+<div class="flex items-baseline gap-sm">
+<span class="font-headline-lg text-headline-lg text-primary">1,284</span>
+<span class="font-label-sm text-label-sm text-secondary font-bold px-sm py-xs bg-secondary-container rounded-full">+12%</span>
+</div>
+</div>
+<!-- Last Result -->
+<div class="bg-surface-container-lowest border border-outline-variant/60 p-lg rounded-2xl flex flex-col justify-between h-36 hover:border-secondary transition-all">
+<div class="flex justify-between items-start">
+<span class="font-label-md text-label-md text-on-surface-variant uppercase tracking-widest text-[10px]">Recent Outcome</span>
+<span class="material-symbols-outlined text-secondary" data-icon="check_circle">verified</span>
+</div>
+<div class="flex flex-col">
+<span class="font-headline-sm text-headline-sm text-secondary font-bold">Normal</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">ID: 772-01</span>
+</div>
+</div>
+<!-- Device Status -->
+<div class="bg-surface-container-lowest border border-outline-variant/60 p-lg rounded-2xl flex flex-col justify-between h-36 hover:border-secondary transition-all">
+<div class="flex justify-between items-start">
+<span class="font-label-md text-label-md text-on-surface-variant uppercase tracking-widest text-[10px]">System Health</span>
+<span class="material-symbols-outlined text-primary" data-icon="settings_remote">router</span>
+</div>
+<div class="flex items-center gap-sm">
+<div class="w-2.5 h-2.5 rounded-full bg-secondary"></div>
+<span class="font-headline-sm text-headline-sm text-primary">Ready</span>
+</div>
+</div>
+<!-- Recent Patient -->
+<div class="bg-surface-container-lowest border border-outline-variant/60 p-lg rounded-2xl flex flex-col justify-between h-36 hover:border-secondary transition-all">
+<div class="flex justify-between items-start">
+<span class="font-label-md text-label-md text-on-surface-variant uppercase tracking-widest text-[10px]">Current Session</span>
+<span class="material-symbols-outlined text-outline" data-icon="history">schedule</span>
+</div>
+<div class="flex flex-col">
+<span class="font-headline-sm text-headline-sm text-primary">Elara Vance</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">14 mins ago</span>
+</div>
+</div>
+</section>
+<!-- Primary Action & Detailed View Split -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-gutter">
+<!-- Large Primary Start Scan Card -->
+<div class="lg:col-span-2 relative group overflow-hidden rounded-2xl h-[400px] flex flex-col justify-end p-xl cursor-pointer shadow-2xl shadow-primary/10">
+<div class="absolute inset-0 bg-primary-container">
+<div class="absolute inset-0 bg-gradient-to-t from-primary/95 via-primary/50 to-transparent z-10"></div>
+<img class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-1000 opacity-60" data-alt="A high-tech medical imaging environment featuring a sleek, minimalist NeuroScan ABR device with glowing Jungle Teal status lights. The room is modern and clinical, with a soft Deep Space Blue ambient glow and clean, precise medical surfaces. The atmosphere is professional and advanced, emphasizing the precision and speed of the diagnostic equipment." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBu9Md_S1K4fR5Hl3MI4eP1BZbV5TAEiiGcfmE5uFLnmKDS14TN7A17hjrAKr5RLehN4gftiLcNm-qDq_YoEyx7ScuSE7KKFioLO_a86uJyNRCVM2uOmGKX-_owRKPXb31vGJByezPTF1CasSP_jpTZFWRRRu7X078xiLo8zfDa3cYau9PZOaZF4v9MAW7NVWeRvS9WKkpnoEQ5ZhATLmqnoH90GHENsAd7GmdmSGL2g61Zkq1CDjn8_nnSFkhmiHzR1t-rmhQ7KG8X"/>
+</div>
+<div class="relative z-20 space-y-md">
+<span class="bg-secondary text-on-secondary px-md py-1 rounded-full font-label-sm text-label-sm uppercase tracking-widest">System Ready</span>
+<h3 class="font-headline-lg text-headline-lg text-white">New Neurosound Clinical Scan</h3>
+<p class="font-body-md text-body-md text-primary-fixed/80 max-w-lg leading-relaxed">Automated ABR screening with real-time waveform analysis and instantaneous clinical reporting.</p>
+<div class="flex gap-lg pt-lg">
+<button class="bg-primary-fixed text-on-primary-fixed px-xl py-lg rounded-xl font-label-md text-label-md font-bold flex items-center gap-sm hover:bg-white hover:scale-105 transition-all shadow-lg">
+<span class="material-symbols-outlined" data-icon="medical_services">play_circle</span>
+                                    Initiate Scan
+                                </button>
+<button class="bg-white/5 backdrop-blur-xl text-white border border-white/20 px-xl py-lg rounded-xl font-label-md text-label-md hover:bg-white/10 transition-all">
+                                    Queue Patient
+                                </button>
+</div>
+</div>
+</div>
+<!-- Quick Controls / Stats Card -->
+<div class="bg-white rounded-2xl p-xl space-y-xl border border-outline-variant/60 shadow-sm">
+<div class="flex items-center justify-between">
+<h4 class="font-headline-sm text-headline-sm text-primary">System Monitoring</h4>
+<span class="material-symbols-outlined text-secondary" data-icon="verified_user">verified_user</span>
+</div>
+<div class="space-y-lg">
+<div class="space-y-sm">
+<div class="flex justify-between font-label-md text-label-md">
+<span class="text-on-surface-variant">Sensor Calibration</span>
+<span class="text-secondary font-bold">98%</span>
+</div>
+<div class="w-full h-1.5 bg-surface-container-high rounded-full overflow-hidden">
+<div class="h-full bg-secondary" style="width: 98%"></div>
+</div>
+</div>
+<div class="space-y-sm">
+<div class="flex justify-between font-label-md text-label-md">
+<span class="text-on-surface-variant">Cloud Storage</span>
+<span class="text-on-surface font-bold">42%</span>
+</div>
+<div class="w-full h-1.5 bg-surface-container-high rounded-full overflow-hidden">
+<div class="h-full bg-primary" style="width: 42%"></div>
+</div>
+</div>
+<div class="space-y-sm">
+<div class="flex justify-between font-label-md text-label-md">
+<span class="text-on-surface-variant">Battery Status</span>
+<span class="text-primary font-bold">81%</span>
+</div>
+<div class="w-full h-1.5 bg-surface-container-high rounded-full overflow-hidden">
+<div class="h-full bg-primary-container" style="width: 81%"></div>
+</div>
+</div>
+</div>
+<div class="pt-lg">
+<button class="w-full py-lg border border-outline-variant text-on-surface rounded-xl font-label-md text-label-md hover:bg-surface-container-low transition-all flex justify-center items-center gap-sm">
+<span class="material-symbols-outlined text-[20px]" data-icon="download">ios_share</span>
+                                Export Session Logs
+                            </button>
+</div>
+</div>
+</div>
+<!-- Recent Activity - Streamlined Table -->
+<section class="bg-white rounded-2xl border border-outline-variant/60 overflow-hidden shadow-sm">
+<div class="px-xl py-lg flex justify-between items-center border-b border-outline-variant/30">
+<h4 class="font-headline-sm text-headline-sm text-primary">Clinical Activity</h4>
+<button class="text-primary font-label-md text-label-md flex items-center gap-xs hover:gap-sm transition-all group">
+                            Full History
+                            <span class="material-symbols-outlined text-[18px]" data-icon="arrow_forward">arrow_forward</span>
+</button>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="bg-surface-container-low/50 font-label-md text-label-md text-on-surface-variant uppercase tracking-widest text-[11px]">
+<th class="px-xl py-lg">Patient</th>
+<th class="px-xl py-lg">Reference</th>
+<th class="px-xl py-lg">Type</th>
+<th class="px-xl py-lg">Timestamp</th>
+<th class="px-xl py-lg">Outcome</th>
+<th class="px-xl py-lg">Status</th>
+</tr>
+</thead>
+<tbody class="font-body-sm text-body-sm text-on-surface divide-y divide-outline-variant/30">
+<tr class="hover:bg-surface-container-low/30 transition-colors">
+<td class="px-xl py-lg font-semibold">Benjamin Carter</td>
+<td class="px-xl py-lg text-on-surface-variant">#BR-9902</td>
+<td class="px-xl py-lg">Screening ABR</td>
+<td class="px-xl py-lg text-on-surface-variant">11:45 AM</td>
+<td class="px-xl py-lg">
+<span class="bg-secondary-container/50 text-secondary px-sm py-xs rounded-lg font-label-sm text-label-sm font-bold uppercase tracking-tighter">Normal</span>
+</td>
+<td class="px-xl py-lg">
+<span class="flex items-center gap-sm text-secondary font-medium"><span class="w-2 h-2 rounded-full bg-secondary"></span> Finalized</span>
+</td>
+</tr>
+<tr class="hover:bg-surface-container-low/30 transition-colors">
+<td class="px-xl py-lg font-semibold">Sophia Martinez</td>
+<td class="px-xl py-lg text-on-surface-variant">#BR-9891</td>
+<td class="px-xl py-lg">Diagnostic ABR</td>
+<td class="px-xl py-lg text-on-surface-variant">10:15 AM</td>
+<td class="px-xl py-lg">
+<span class="bg-error-container/50 text-error px-sm py-xs rounded-lg font-label-sm text-label-sm font-bold uppercase tracking-tighter">Re-test</span>
+</td>
+<td class="px-xl py-lg">
+<span class="flex items-center gap-sm text-on-surface-variant"><span class="w-2 h-2 rounded-full bg-outline"></span> Review Pending</span>
+</td>
+</tr>
+<tr class="hover:bg-surface-container-low/30 transition-colors">
+<td class="px-xl py-lg font-semibold">Liam Wilson</td>
+<td class="px-xl py-lg text-on-surface-variant">#BR-9884</td>
+<td class="px-xl py-lg">Screening ABR</td>
+<td class="px-xl py-lg text-on-surface-variant">Yesterday</td>
+<td class="px-xl py-lg">
+<span class="bg-secondary-container/50 text-secondary px-sm py-xs rounded-lg font-label-sm text-label-sm font-bold uppercase tracking-tighter">Normal</span>
+</td>
+<td class="px-xl py-lg">
+<span class="flex items-center gap-sm text-secondary font-medium"><span class="w-2 h-2 rounded-full bg-secondary"></span> Finalized</span>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+</div>
+<!-- Footer - Clean -->
+<footer class="w-full py-8 px-margin-mobile md:px-margin-desktop flex flex-col md:flex-row justify-between items-center bg-surface-container-low/50 border-t border-outline-variant/30 mt-auto">
+<p class="font-label-sm text-label-sm text-on-surface-variant/70">© 2024 Neurosound Medical Systems. FDA Cleared Diagnostic Device.</p>
+<div class="flex gap-xl mt-md md:mt-0">
+<a class="font-label-sm text-label-sm text-on-surface-variant hover:text-primary transition-colors" href="#">Support</a>
+<a class="font-label-sm text-label-sm text-on-surface-variant hover:text-primary transition-colors" href="#">Compliance</a>
+<a class="font-label-sm text-label-sm text-primary font-bold hover:underline" href="#">Logout</a>
+</div>
+</footer>
+</main>
+</div>
+<!-- Mobile Navigation Bar - Streamlined -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 py-3 bg-surface/95 backdrop-blur-xl lg:hidden border-t border-outline-variant shadow-2xl">
+<div class="flex flex-col items-center justify-center text-primary p-2">
+<span class="material-symbols-outlined" data-icon="dashboard">grid_view</span>
+<span class="font-label-sm text-[10px] mt-1 font-bold">Home</span>
+</div>
+<div class="flex flex-col items-center justify-center text-on-surface-variant p-2">
+<span class="material-symbols-outlined" data-icon="medical_services">monitor_heart</span>
+<span class="font-label-sm text-[10px] mt-1">Scan</span>
+</div>
+<div class="flex flex-col items-center justify-center text-on-surface-variant p-2">
+<span class="material-symbols-outlined" data-icon="history">history</span>
+<span class="font-label-sm text-[10px] mt-1">History</span>
+</div>
+<div class="flex flex-col items-center justify-center text-on-surface-variant p-2">
+<span class="material-symbols-outlined" data-icon="menu">menu</span>
+<span class="font-label-sm text-[10px] mt-1">More</span>
+</div>
+</nav>
+<script>
+        // Micro-interaction for interactive elements
+        document.querySelectorAll('.bg-surface-container-lowest, .group').forEach(card => {
+            card.addEventListener('mouseenter', () => {
+                card.style.transform = 'translateY(-2px)';
+            });
+            card.addEventListener('mouseleave', () => {
+                card.style.transform = 'translateY(0)';
+            });
+        });
+    </script>
+</body></html>
