@@ -19,6 +19,7 @@
  *   s [a b d t]       step level dari a ke b, langkah d dB, tiap t detik
  *                     (default: s 0 -60 10 5). "s" lagi untuk berhenti
  *   p                 putar frekuensi audiometri 250..8000 Hz, 3 detik tiap step
+ *   i2s               laju frame I2S, error write, sampel puncak
  *   net               status WiFi / WebSocket
  *   wifi reset        hapus kredensial WiFi, restart ke mode portal
  *   ?                 status + bantuan
@@ -66,6 +67,10 @@ static volatile float g_level_db = -20.0f;
 static volatile int   g_channel  = CH_B;
 static volatile bool  g_on       = true;
 
+/* Diagnostik I2S: frame terkirim, error write, dan sampel puncak per status. */
+static volatile uint32_t g_i2s_frames, g_i2s_errors;
+static volatile int32_t  g_i2s_peak;
+
 static i2s_chan_handle_t tx;
 static int32_t           buf[FRAMES_PER_BUF * 2];
 
@@ -109,17 +114,22 @@ static void audio_task(void *arg)
         double step  = TWO_PI * g_freq / SAMPLE_RATE;
         int    ch    = g_channel;
 
+        int32_t peak = 0;
         for (int i = 0; i < FRAMES_PER_BUF; i++) {
             gain += (target - gain) * RAMP_COEF;
             int32_t s = (int32_t)(sinf((float)phase) * gain * 2147483000.0f);
+            if (s > peak) peak = s;
             buf[2 * i]     = (ch & CH_L) ? s : 0;
             buf[2 * i + 1] = (ch & CH_R) ? s : 0;
             phase += step;
             if (phase >= TWO_PI) phase -= TWO_PI;
         }
 
-        size_t written;
-        i2s_channel_write(tx, buf, sizeof(buf), &written, portMAX_DELAY);
+        size_t written = 0;
+        if (i2s_channel_write(tx, buf, sizeof(buf), &written, portMAX_DELAY) != ESP_OK)
+            g_i2s_errors++;
+        g_i2s_frames += written / (2 * sizeof(int32_t));
+        if (peak > g_i2s_peak) g_i2s_peak = peak;
     }
 }
 
@@ -129,6 +139,22 @@ static void audio_task(void *arg)
 static const char *ch_name(int ch)
 {
     return ch == CH_L ? "L" : ch == CH_R ? "R" : "L+R";
+}
+
+static void print_i2s_diag(void)
+{
+    static uint32_t last_frames;
+    static int64_t  last_us;
+    int64_t  now    = esp_timer_get_time();
+    uint32_t frames = g_i2s_frames;
+    float    rate   = last_us ? (frames - last_frames) * 1e6f / (float)(now - last_us) : 0.0f;
+    float    peak   = g_i2s_peak / 2147483647.0f;
+    LOG("I2S", "%.0f frame/s (harus ~%d)  error=%lu  puncak=%.1f dBFS",
+        rate, SAMPLE_RATE, (unsigned long)g_i2s_errors,
+        peak > 0 ? 20.0f * log10f(peak) : -999.0f);
+    last_frames = frames;
+    last_us     = now;
+    g_i2s_peak  = 0;
 }
 
 static void print_status(void)
@@ -147,7 +173,7 @@ static void print_help(void)
 {
     printf("\n  f <Hz> | l <dBFS> | + - ++ -- | c L/R/B | on | off\n"
            "  s [mulai akhir langkah detik]  (default s 0 -60 10 5)\n"
-           "  p  (sweep 250/500/1k/2k/4k/8k Hz) | net | wifi reset | ?  status\n\n");
+           "  p  (sweep 250/500/1k/2k/4k/8k Hz) | i2s | net | wifi reset | ?  status\n\n");
 }
 
 static void set_level(float db)
@@ -243,6 +269,9 @@ static void handle_line(char *line)
         g_on           = true;
         g_freq         = sweep_freqs[0];
         LOG("SWEEP", "f %.0f Hz  (%.1f dBFS)", g_freq, g_level_db);
+        return;
+    } else if (!strcmp(cmd, "i2s")) {
+        print_i2s_diag();
         return;
     } else if (!strcmp(cmd, "net")) {
         net_print_status();
