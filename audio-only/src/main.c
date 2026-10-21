@@ -57,8 +57,6 @@
 #define PIN_BOOT        0
 #define STATUS_PERIOD_US 5000000
 
-#define LOG(tag, fmt, ...) \
-    printf("[%7lld ms] [%-6s] " fmt "\n", esp_timer_get_time() / 1000, tag, ##__VA_ARGS__)
 
 enum { CH_L = 1, CH_R = 2, CH_B = 3 };
 
@@ -195,6 +193,7 @@ static void auto_tick(void)
 
 static void handle_line(char *line)
 {
+    LOG("CMD", "%s", line);
     char  cmd[8] = {0};
     float a = 0, b = 0, c = 0, d = 0;
     int   n = sscanf(line, "%7s %f %f %f %f", cmd, &a, &b, &c, &d);
@@ -300,6 +299,7 @@ static void console_task(void *arg)
             next_status += STATUS_PERIOD_US;
             send_status();
         }
+        net_log_flush();
 
         int ch = fgetc(stdin);
         if (ch == EOF) {
@@ -327,6 +327,7 @@ static void console_task(void *arg)
 void app_main(void)
 {
     setvbuf(stdin, NULL, _IONBF, 0);
+    net_log_init();
     printf("\n=== PCM5102A audio test ===\n");
     LOG("INFO", "pembagi 22k/47 = %.1f dB, DAC full scale %.1f Vrms", DIVIDER_DB, DAC_FS_VRMS);
 

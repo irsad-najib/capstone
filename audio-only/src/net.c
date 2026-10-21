@@ -17,6 +17,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <stdarg.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
@@ -28,6 +29,7 @@
 #include "esp_crt_bundle.h"
 #include "esp_system.h"
 #include "esp_timer.h"
+#include "esp_log.h"
 #include "nvs_flash.h"
 #include "nvs.h"
 #include "lwip/sockets.h"
@@ -39,8 +41,6 @@
 #define STA_TIMEOUT_MS   15000
 #define NVS_NS           "wifi-cfg"
 
-#define LOG(tag, fmt, ...) \
-    printf("[%7lld ms] [%-6s] " fmt "\n", esp_timer_get_time() / 1000, tag, ##__VA_ARGS__)
 
 #define BIT_GOT_IP  BIT0
 
@@ -164,6 +164,7 @@ static void ws_start(void)
         .network_timeout_ms   = 10000,
         .ping_interval_sec    = 15,   /* Cloudflare menutup koneksi idle */
         .task_stack           = 6144,
+        .buffer_size          = 2048,
     };
     ws = esp_websocket_client_init(&cfg);
     esp_websocket_register_events(ws, WEBSOCKET_EVENT_ANY, ws_event, NULL);
@@ -481,6 +482,144 @@ void net_start(net_cmd_cb_t on_command)
         }
     }
     portal_start();
+}
+
+/* ------------------------------------------------------------------ */
+/*  Log ke backend                                                     */
+/* ------------------------------------------------------------------ */
+/* Semua baris LOG() dan ESP_LOGx ditampung di ring buffer, lalu dikirim
+ * sebagai {"type":"log",...} dari task konsol. Baris dari sebelum WiFi
+ * konek ikut terkirim begitu WS tersambung. */
+#define LOG_LINES     96
+#define LOG_LINE_LEN  160
+#define LOG_FLUSH_US  500000
+#define LOG_JSON_MAX  1800
+
+static char        log_ring[LOG_LINES][LOG_LINE_LEN];
+static int         log_head, log_count;     /* head = baris tertua */
+static uint32_t    log_dropped;
+static portMUX_TYPE log_mux = portMUX_INITIALIZER_UNLOCKED;
+static vprintf_like_t uart_vprintf;
+
+static void log_push(const char *s)
+{
+    char clean[LOG_LINE_LEN];
+    size_t n = 0;
+    for (; *s && n < sizeof(clean) - 1; s++) {
+        if (*s == '\033') {                    /* buang kode warna ANSI */
+            while (*s && *s != 'm') s++;
+            if (!*s) break;
+            continue;
+        }
+        if (*s == '\n' || *s == '\r') continue;
+        clean[n++] = *s;
+    }
+    clean[n] = '\0';
+    if (n == 0) return;
+
+    portENTER_CRITICAL(&log_mux);
+    if (log_count == LOG_LINES) {
+        log_head = (log_head + 1) % LOG_LINES;
+        log_count--;
+        log_dropped++;
+    }
+    memcpy(log_ring[(log_head + log_count) % LOG_LINES], clean, n + 1);
+    log_count++;
+    portEXIT_CRITICAL(&log_mux);
+}
+
+static int log_vprintf_hook(const char *fmt, va_list args)
+{
+    char buf[LOG_LINE_LEN];
+    va_list copy;
+    va_copy(copy, args);
+    vsnprintf(buf, sizeof(buf), fmt, copy);
+    va_end(copy);
+    log_push(buf);
+    return uart_vprintf(fmt, args);
+}
+
+void net_log_init(void)
+{
+    uart_vprintf = esp_log_set_vprintf(log_vprintf_hook);
+}
+
+void net_logf(const char *fmt, ...)
+{
+    char buf[LOG_LINE_LEN];
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, args);
+    va_end(args);
+    printf("%s\n", buf);
+    log_push(buf);
+}
+
+static size_t json_escape(char *out, size_t cap, const char *in)
+{
+    size_t n = 0;
+    for (; *in; in++) {
+        unsigned char c = (unsigned char)*in;
+        if (c == '"' || c == '\\') {
+            if (n + 2 >= cap) break;
+            out[n++] = '\\';
+            out[n++] = (char)c;
+        } else if (c < 0x20) {
+            if (n + 6 >= cap) break;
+            n += snprintf(out + n, cap - n, "\\u%04x", c);
+        } else {
+            if (n + 1 >= cap) break;
+            out[n++] = (char)c;
+        }
+    }
+    out[n] = '\0';
+    return n;
+}
+
+void net_log_flush(void)
+{
+    static int64_t next_us;
+    static char    js[LOG_JSON_MAX + 64];
+    int64_t now = esp_timer_get_time();
+    if (now < next_us || !net_ws_connected()) return;
+    next_us = now + LOG_FLUSH_US;
+
+    if (log_dropped) {
+        uint32_t d = log_dropped;
+        log_dropped = 0;
+        char msg[64];
+        snprintf(msg, sizeof(msg), "[log] %lu baris lama terbuang (buffer penuh)", (unsigned long)d);
+        log_push(msg);
+    }
+
+    /* Hanya task ini yang mengambil dari ring, jadi baris yang diintip
+     * tidak akan hilang kecuali tertimpa karena penuh (dicek ulang saat commit). */
+    int  n = snprintf(js, sizeof(js), "{\"type\":\"log\",\"device\":\"%s\",\"ts\":%lld,\"lines\":[",
+                      NET_DEVICE_ID, now / 1000);
+    int  taken = 0;
+    char line[LOG_LINE_LEN], esc[LOG_LINE_LEN * 2];
+    for (;;) {
+        portENTER_CRITICAL(&log_mux);
+        bool have = taken < log_count;
+        if (have) memcpy(line, log_ring[(log_head + taken) % LOG_LINES], LOG_LINE_LEN);
+        portEXIT_CRITICAL(&log_mux);
+        if (!have) break;
+
+        size_t e = json_escape(esc, sizeof(esc), line);
+        if (n + (int)e + 4 > LOG_JSON_MAX) break;
+        n += snprintf(js + n, sizeof(js) - n, "%s\"%s\"", taken ? "," : "", esc);
+        taken++;
+    }
+    if (taken == 0) return;
+    n += snprintf(js + n, sizeof(js) - n, "]}");
+
+    if (!net_ws_send(js, n)) return;   /* gagal → dicoba lagi berikutnya */
+
+    portENTER_CRITICAL(&log_mux);
+    if (taken > log_count) taken = log_count;
+    log_head  = (log_head + taken) % LOG_LINES;
+    log_count -= taken;
+    portEXIT_CRITICAL(&log_mux);
 }
 
 void net_print_status(void)
