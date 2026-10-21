@@ -1,0 +1,6 @@
+.venv/
+data/
+server
+*.log
+.env
+tests/

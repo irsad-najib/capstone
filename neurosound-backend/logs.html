@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ESP32 Logs</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --border: #30363d; --text: #c9d1d9;
+    --muted: #8b949e; --accent: #2f81f7; --ok: #3fb950; --err: #f85149; --warn: #d29922; --srv: #a371f7;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    display: flex; flex-direction: column;
+  }
+  header, .bar {
+    display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+    padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--border);
+  }
+  .bar { border-top: 1px solid var(--border); border-bottom: 0; }
+  h1 { font-size: 14px; margin: 0 8px 0 0; font-weight: 600; }
+  select, input, button {
+    font: inherit; color: var(--text); background: var(--bg);
+    border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; min-height: 34px;
+  }
+  button { cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.on { border-color: var(--warn); color: var(--warn); }
+  input.grow { flex: 1 1 160px; min-width: 0; }
+  #status { margin-left: auto; color: var(--muted); font-size: 12px; white-space: nowrap; }
+  #status.live::before { content: "● "; color: var(--ok); }
+  #status.down::before { content: "● "; color: var(--err); }
+  #info { color: var(--muted); font-size: 12px; padding: 4px 12px; background: var(--panel); }
+  #log {
+    flex: 1; overflow-y: auto; padding: 8px 12px; margin: 0;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  .row { display: block; }
+  .t { color: var(--muted); }
+  .d { color: var(--accent); }
+  .srv { color: var(--srv); }
+  .err { color: var(--err); }
+  .warn { color: var(--warn); }
+  .quick { display: flex; flex-wrap: wrap; gap: 6px; }
+  #toast { color: var(--muted); font-size: 12px; min-width: 0; }
+  @media (max-width: 600px) {
+    #log { font-size: 12px; padding: 6px 8px; }
+    .t { display: none; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>ESP32 Logs</h1>
+  <select id="device" aria-label="Device"><option value="">Semua device</option></select>
+  <input id="filter" class="grow" placeholder="Filter teks…" aria-label="Filter">
+  <button id="pause" title="Pause auto-scroll">⏸ Auto-scroll</button>
+  <button id="clear">Clear</button>
+  <span id="status">menghubungkan…</span>
+</header>
+<div id="info"></div>
+<pre id="log"></pre>
+<div class="bar">
+  <form id="cmdForm" style="display:flex;gap:6px;flex:1 1 260px;min-width:0">
+    <input id="cmd" class="grow" placeholder="Perintah, mis. l -30 / f 1000" autocomplete="off" aria-label="Perintah">
+    <button class="primary" type="submit">Kirim</button>
+  </form>
+  <div class="quick">
+    <button data-cmd="l 0">l 0</button>
+    <button data-cmd="l -20">l -20</button>
+    <button data-cmd="off">off</button>
+    <button data-cmd="on">on</button>
+    <button data-cmd="net">net</button>
+    <button data-cmd="?">?</button>
+  </div>
+  <span id="toast"></span>
+</div>
+<script>
+(() => {
+  const qs = new URLSearchParams(location.search);
+  const token = qs.get("token") || "";
+  const withToken = (url) => token ? url + (url.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(token) : url;
+  const headers = token ? { "X-Log-Token": token } : {};
+
+  const $ = (id) => document.getElementById(id);
+  const logEl = $("log"), deviceEl = $("device"), filterEl = $("filter"),
+        statusEl = $("status"), infoEl = $("info"), toastEl = $("toast"), pauseEl = $("pause");
+  const MAX_ROWS = 3000;
+  let autoScroll = true, es = null, filterText = "";
+
+  const fmtTime = (t) => (t || "").replace(/^.*T/, "").replace(/(\.\d{3}).*$/, "$1");
+  const cls = (line) => line.startsWith("[server]") ? "srv"
+    : /error|gagal|fail/i.test(line) ? "err"
+    : /warn/i.test(line) ? "warn" : "";
+
+  function addRow(e) {
+    const row = document.createElement("span");
+    row.className = "row";
+    row.dataset.text = (e.device + " " + e.line).toLowerCase();
+    const t = document.createElement("span"); t.className = "t"; t.textContent = fmtTime(e.t) + " ";
+    row.appendChild(t);
+    if (!deviceEl.value) {
+      const d = document.createElement("span"); d.className = "d"; d.textContent = e.device + " ";
+      row.appendChild(d);
+    }
+    const l = document.createElement("span"); l.className = cls(e.line); l.textContent = e.line;
+    row.appendChild(l);
+    row.appendChild(document.createTextNode("\n"));
+    if (filterText && !row.dataset.text.includes(filterText)) row.hidden = true;
+    logEl.appendChild(row);
+    while (logEl.childElementCount > MAX_ROWS) logEl.firstElementChild.remove();
+    if (autoScroll) logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function setStatus(text, state) {
+    statusEl.textContent = text;
+    statusEl.className = state || "";
+  }
+
+  async function loadDevices() {
+    try {
+      const res = await fetch("/api/v1/devices");
+      const data = await res.json();
+      const current = deviceEl.value;
+      const ids = new Set(data.devices || []);
+      (data.detail || []).forEach((d) => ids.add(d.id));
+      const known = new Set([...deviceEl.options].map((o) => o.value));
+      ids.forEach((id) => {
+        if (!known.has(id)) deviceEl.add(new Option(id, id));
+      });
+      deviceEl.value = current;
+      renderInfo(data.detail || []);
+    } catch (_) { /* coba lagi di interval berikutnya */ }
+  }
+
+  function renderInfo(detail) {
+    const sel = deviceEl.value;
+    const list = sel ? detail.filter((d) => d.id === sel) : detail;
+    infoEl.textContent = list.map((d) => {
+      let s = (d.connected ? "🟢 " : "⚪ ") + d.id;
+      if (d.audio_test) {
+        const a = d.audio_test;
+        s += ` · audio ${a.on ? "ON" : "OFF"} ${a.freq ?? "?"} Hz ${a.level_dbfs ?? "?"} dBFS ${a.ch ?? ""}`;
+      }
+      if (d.last_seen) s += ` · terakhir ${fmtTime(d.last_seen)}`;
+      return s;
+    }).join("   |   ") || "Belum ada device yang terhubung.";
+  }
+
+  async function connect() {
+    if (es) es.close();
+    logEl.textContent = "";
+    const dev = deviceEl.value;
+    const q = dev ? "?device=" + encodeURIComponent(dev) : "";
+    try {
+      const res = await fetch(withToken("/api/v1/logs" + (q || "?") + (q ? "&" : "") + "limit=200"), { headers });
+      if (res.status === 401) { setStatus("token salah / tidak ada (?token=)", "down"); return; }
+      const data = await res.json();
+      (data.lines || []).forEach(addRow);
+    } catch (_) { /* tetap lanjut ke live */ }
+
+    es = new EventSource(withToken("/api/v1/logs/stream" + q));
+    es.onopen = () => setStatus("live", "live");
+    es.onerror = () => setStatus("terputus, mencoba lagi…", "down");
+    es.onmessage = (ev) => { try { addRow(JSON.parse(ev.data)); } catch (_) {} };
+  }
+
+  async function sendCmd(cmd) {
+    cmd = cmd.trim();
+    if (!cmd) return;
+    toastEl.textContent = "mengirim…";
+    try {
+      const res = await fetch(withToken("/api/v1/command"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...headers },
+        body: JSON.stringify({ device: deviceEl.value, cmd }),
+      });
+      const text = await res.text();
+      let data = {}; try { data = JSON.parse(text); } catch (_) {}
+      toastEl.textContent = res.ok ? `✓ "${cmd}" terkirim ke ${data.sent} koneksi`
+        : `✗ ${data.error || text.trim() || res.status}`;
+    } catch (e) {
+      toastEl.textContent = "✗ " + e.message;
+    }
+  }
+
+  deviceEl.addEventListener("change", () => { loadDevices(); connect(); });
+  filterEl.addEventListener("input", () => {
+    filterText = filterEl.value.toLowerCase();
+    for (const row of logEl.children) row.hidden = !!filterText && !row.dataset.text.includes(filterText);
+  });
+  pauseEl.addEventListener("click", () => {
+    autoScroll = !autoScroll;
+    pauseEl.textContent = autoScroll ? "⏸ Auto-scroll" : "▶ Auto-scroll";
+    pauseEl.classList.toggle("on", !autoScroll);
+    if (autoScroll) logEl.scrollTop = logEl.scrollHeight;
+  });
+  $("clear").addEventListener("click", () => { logEl.textContent = ""; });
+  $("cmdForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    sendCmd($("cmd").value);
+    $("cmd").select();
+  });
+  document.querySelectorAll("[data-cmd]").forEach((b) => b.addEventListener("click", () => sendCmd(b.dataset.cmd)));
+
+  loadDevices().then(connect);
+  setInterval(loadDevices, 5000);
+})();
+</script>
+</body>
+</html>

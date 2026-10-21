@@ -1,11 +1,28 @@
 services:
+  backend:
+    build: .
+    container_name: neurosound-backend
+    restart: unless-stopped
+    environment:
+      MONGO_URI: mongodb://mongo:27017
+      MONGO_DB: neurosound
+      LOG_TOKEN: ${LOG_TOKEN:-}  # dari .env; kosong = /logs & perintah terbuka
+    ports:
+      # hanya localhost; akses publik lewat nginx + Cloudflare Tunnel
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - sessions:/app/data/sessions
+    depends_on:
+      - mongo
+
   mongo:
     image: mongo:7
     container_name: neurosound-mongo
-    ports:
-      - "27017:27017"
+    restart: unless-stopped
+    # tidak di-expose ke host (port 27017 host sudah dipakai mongod bawaan)
     volumes:
       - mongo-data:/data/db
 
 volumes:
   mongo-data:
+  sessions:

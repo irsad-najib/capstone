@@ -2,3 +2,4 @@
 server
 data/
 *.log
+.env
