@@ -13,6 +13,7 @@
  * Perintah via serial monitor (115200), ketik lalu Enter:
  *   f <Hz>            frekuensi (20..20000), mis. "f 1000"
  *   l <dBFS>          level (0..-120), mis. "l -20"
+ *   a <amplitudo>     amplitudo linear 0..1 (1 = full scale), mis. "a 0.1" = -20 dBFS
  *   +  / -            naik / turun 1 dB  (++ / -- = 10 dB)
  *   c L|R|B           channel kiri / kanan / dua-duanya
  *   on / off          nyalakan / matikan tone
@@ -160,8 +161,9 @@ static void print_i2s_diag(void)
 static void print_status(void)
 {
     float dac_vrms = DAC_FS_VRMS * powf(10.0f, g_level_db / 20.0f);
-    LOG("STATUS", "%s  f=%.0f Hz  level=%.1f dBFS  ch=%s",
-        g_on ? "ON " : "OFF", g_freq, g_level_db, ch_name(g_channel));
+    LOG("STATUS", "%s  f=%.0f Hz  level=%.2f dBFS  amp=%.6g  ch=%s",
+        g_on ? "ON " : "OFF", g_freq, g_level_db, powf(10.0f, g_level_db / 20.0f),
+        ch_name(g_channel));
     LOG("STATUS", "  DAC out  ≈ %.2f mVrms (%.1f dBV)",
         dac_vrms * 1000.0f, 20.0f * log10f(dac_vrms));
     LOG("STATUS", "  setelah 22k/47 ≈ %.3f mVrms (%.1f dBV, pot maksimum)",
@@ -171,7 +173,7 @@ static void print_status(void)
 
 static void print_help(void)
 {
-    printf("\n  f <Hz> | l <dBFS> | + - ++ -- | c L/R/B | on | off\n"
+    printf("\n  f <Hz> | l <dBFS> | a <0..1> | + - ++ -- | c L/R/B | on | off\n"
            "  s [mulai akhir langkah detik]  (default s 0 -60 10 5)\n"
            "  p  (sweep 250/500/1k/2k/4k/8k Hz) | i2s | net | wifi reset | ?  status\n\n");
 }
@@ -228,6 +230,9 @@ static void handle_line(char *line)
     if (!strcmp(cmd, "f") && n >= 2) {
         if (a < 20.0f || a > 20000.0f) { LOG("ERR", "frekuensi 20..20000 Hz"); return; }
         g_freq = a;
+    } else if (!strcmp(cmd, "a") && n >= 2) {
+        if (a <= 0.0f || a > 1.0f) { LOG("ERR", "amplitudo harus > 0 dan ≤ 1"); return; }
+        set_level(20.0f * log10f(a));
     } else if (!strcmp(cmd, "l") && n >= 2) {
         set_level(a);
     } else if (!strcmp(cmd, "+"))  { set_level(g_level_db + 1);
@@ -305,9 +310,10 @@ static void send_status(void)
     char js[256];
     int n = snprintf(js, sizeof(js),
         "{\"type\":\"audio_test\",\"device\":\"%s\",\"seq\":%lu,\"uptime_ms\":%lld,"
-        "\"on\":%s,\"freq\":%.1f,\"level_dbfs\":%.1f,\"ch\":\"%s\"}",
+        "\"on\":%s,\"freq\":%.1f,\"level_dbfs\":%.2f,\"amp\":%.6g,\"ch\":\"%s\"}",
         NET_DEVICE_ID, (unsigned long)seq++, esp_timer_get_time() / 1000,
-        g_on ? "true" : "false", g_freq, g_level_db, ch_name(g_channel));
+        g_on ? "true" : "false", g_freq, g_level_db, powf(10.0f, g_level_db / 20.0f),
+        ch_name(g_channel));
     net_ws_send(js, n);
 }
 
