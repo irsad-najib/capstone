@@ -2,17 +2,19 @@
 
 /**
  * Generic data-fetching hook backed by the Go API.
- * Handles loading / error states; refetches on the given interval (ms).
+ * Handles loading / error states; refetches on the given interval (ms)
+ * and whenever the backend URL in Settings changes.
  *
  * Usage:
  *   const { data, loading, error, refetch } = useBackend(api.health, 5000);
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useSettings } from "@/lib/settings";
 
 interface State<T> {
   data: T | null;
-  loading: boolean;
+  loading: boolean; // true hanya sampai respons pertama
   error: string | null;
 }
 
@@ -25,12 +27,11 @@ export function useBackend<T>(
     loading: true,
     error: null,
   });
+  const { backendUrl } = useSettings();
 
   const fetcherRef = useRef(fetcher);
-  fetcherRef.current = fetcher;
 
   const run = useCallback(async () => {
-    setState(s => ({ ...s, loading: true, error: null }));
     try {
       const data = await fetcherRef.current();
       setState({ data, loading: false, error: null });
@@ -44,12 +45,16 @@ export function useBackend<T>(
   }, []);
 
   useEffect(() => {
-    run();
+    // fetcher ikut deps supaya fetcher baru (mis. filename berubah) langsung dipakai.
+    // Pemanggil wajib memberi fetcher yang stabil (fungsi modul atau useCallback).
+    fetcherRef.current = fetcher;
+    const first = setTimeout(run, 0);
     if (intervalMs > 0) {
       const id = setInterval(run, intervalMs);
-      return () => clearInterval(id);
+      return () => { clearTimeout(first); clearInterval(id); };
     }
-  }, [run, intervalMs]);
+    return () => clearTimeout(first);
+  }, [run, intervalMs, backendUrl, fetcher]);
 
   return { ...state, refetch: run };
 }

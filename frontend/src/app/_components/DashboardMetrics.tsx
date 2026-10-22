@@ -2,65 +2,42 @@
 
 import { useBackend } from "@/hooks/useBackend";
 import { api } from "@/lib/api";
-import { MdCloud, MdPsychology, MdSensors, MdSignalCellularAlt } from "react-icons/md";
+import { outcomeOf } from "@/lib/abr";
+import { MdCalendarToday, MdFolder, MdTimeline, MdVerified } from "react-icons/md";
+
+const WEEK_MS = 7 * 24 * 3600 * 1000;
 
 export default function DashboardMetrics() {
-  const health  = useBackend(api.health,   5_000);
-  const devices = useBackend(api.devices,  5_000);
-  const abr     = useBackend(api.abrResult, 3_000);
+  const { data, loading, error } = useBackend(api.sessions, 15_000);
+  const sessions = data?.sessions ?? [];
 
-  const isOnline       = health.data?.status === "ok";
-  const connectedCount = devices.data?.devices.length ?? 0;
-  const deviceName     = devices.data?.devices[0] ?? "—";
-  const trialCount     = abr.data?.trial_count ?? 0;
-  const quality        = abr.data?.quality ?? "—";
+  // Hasil final saja (Pass/Refer) yang dihitung untuk pass rate
+  const outcomes = sessions.map(outcomeOf);
+  const pass = outcomes.filter(o => o === "Pass").length;
+  const decided = outcomes.filter(o => o === "Pass" || o === "Refer").length;
+  const newest = sessions.reduce((t, s) => Math.max(t, new Date(s.saved_at).getTime()), 0);
+  const thisWeek = sessions.filter(s => newest - new Date(s.saved_at).getTime() < WEEK_MS).length;
+  const avgTrials = sessions.length ? Math.round(sessions.reduce((n, s) => n + s.trial_count, 0) / sessions.length) : 0;
 
+  const empty = loading ? "…" : error ? "—" : null;
   const metrics = [
-    {
-      label: "Backend Status",
-      value: health.loading ? "…" : isOnline ? "Online" : "Offline",
-      valueClass: isOnline ? "text-secondary" : "text-error",
-      sub: health.data?.time ? new Date(health.data.time).toLocaleTimeString() : undefined,
-      dot: isOnline,
-      icon: MdCloud,
-    },
-    {
-      label: "Connected Devices",
-      value: connectedCount.toString(),
-      sub: connectedCount > 0 ? deviceName : "No device",
-      icon: MdSensors,
-      valueClass: connectedCount > 0 ? "text-primary" : "text-on-surface-variant",
-    },
-    {
-      label: "ABR Trials",
-      value: trialCount > 0 ? trialCount.toLocaleString() : "—",
-      sub: quality,
-      icon: MdPsychology,
-      valueClass: "text-primary",
-    },
-    {
-      label: "SNR (Ch 0)",
-      value: abr.data?.snr?.[0] != null ? `${abr.data.snr[0].toFixed(1)} dB` : "—",
-      sub: "ADS1115 / ADS1299",
-      icon: MdSignalCellularAlt,
-      valueClass: (abr.data?.snr?.[0] ?? 0) > 3 ? "text-secondary" : "text-on-surface-variant",
-    },
+    { label: "Total sessions", value: empty ?? sessions.length.toString(), sub: "saved on backend", icon: MdFolder },
+    { label: "This week", value: empty ?? thisWeek.toString(), sub: "within 7 days of latest", icon: MdCalendarToday },
+    { label: "Pass rate", value: empty ?? (decided ? `${Math.round((pass / decided) * 100)}%` : "—"), sub: decided ? `${pass} of ${decided} converged sessions` : "no converged sessions yet", icon: MdVerified },
+    { label: "Avg. trials", value: empty ?? (sessions.length ? avgTrials.toLocaleString() : "—"), sub: "per session", icon: MdTimeline },
   ];
 
   return (
-    <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-      {metrics.map(({ label, value, sub, dot, icon: Icon, valueClass }) => (
-        <div key={label} className="bg-white border border-outline-variant/60 p-6 rounded-2xl flex flex-col justify-between h-36 hover:border-secondary transition-all">
-          <div className="flex justify-between items-start">
-            <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">{label}</span>
-            <Icon className="text-outline text-[22px]" />
+    <section className="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
+      {metrics.map(({ label, value, sub, icon: Icon }) => (
+        <div key={label} className="bg-surface-container-lowest border border-outline-variant p-5 rounded-2xl flex flex-col justify-between gap-4 min-h-32">
+          <div className="flex justify-between items-start gap-2">
+            <span className="text-[11px] font-bold uppercase tracking-widest text-on-surface-variant">{label}</span>
+            <Icon className="text-outline text-xl shrink-0" />
           </div>
-          <div className="flex flex-col">
-            <div className="flex items-baseline gap-2">
-              <span className={`text-2xl font-bold ${valueClass ?? "text-primary"}`}>{value}</span>
-              {dot && <span className="w-2.5 h-2.5 rounded-full bg-secondary animate-pulse" />}
-            </div>
-            {sub && <span className="text-xs text-on-surface-variant mt-0.5">{sub}</span>}
+          <div>
+            <p className="text-2xl md:text-3xl font-bold text-primary tabular-nums">{value}</p>
+            <p className="text-xs text-on-surface-variant mt-0.5">{sub}</p>
           </div>
         </div>
       ))}

@@ -1,131 +1,111 @@
 "use client";
-import { useEffect, useRef } from "react";
-import { FS } from "@/hooks/useABRStream";
-
-const WAVE_WIN_MS  = 500;
-const WAVE_SAMPLES = Math.round(FS * WAVE_WIN_MS / 1000);
+import { useCanvas, niceCeil, fmtUv } from "@/hooks/useCanvas";
+import type { RawView } from "@/hooks/useABRStream";
 
 interface Props {
-  waveBuf:    Float64Array; // values as-is from backend (µV) or sim (mV)
-  stimBuf:    Uint8Array;
-  currentMv:  number;
-  currentRaw: number;
+  raw:     RawView;
+  height?: number;
 }
 
-export default function RawWaveformChart({ waveBuf, stimBuf, currentMv, currentRaw }: Props) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+/**
+ * Sinyal mentah dua channel (µV) dalam jendela terakhir dari /raw/stream.
+ * Tiap channel punya lajur sendiri; garis putus-putus = penanda stimulus.
+ */
+export default function RawWaveformChart({ raw, height = 260 }: Props) {
+  const ref = useCanvas((ctx, W, H, color) => {
+    const PAD = { l: 56, r: 10, t: 6, b: 22 };
+    const PW = W - PAD.l - PAD.r;
+    const lanes = [
+      { name: "Ch 1", data: raw.ch1, color: color("secondary") },
+      { name: "Ch 2", data: raw.ch2, color: color("primary-container") },
+    ];
+    const laneH = (H - PAD.t - PAD.b) / lanes.length;
+    const n = raw.ch1.length;
+    ctx.font = "10px ui-monospace, SFMono-Regular, Menlo, monospace";
 
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const dpr = window.devicePixelRatio || 1;
-    const W   = canvas.offsetWidth;
-    const H   = canvas.offsetHeight;
-    canvas.width  = W * dpr;
-    canvas.height = H * dpr;
-    const ctx = canvas.getContext("2d")!;
-    ctx.scale(dpr, dpr);
-
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, W, H);
-
-    // Auto-scale from actual buffer values, floor at 0.01
-    let maxAbs = 0.01;
-    for (let i = 0; i < WAVE_SAMPLES; i++) {
-      const v = Math.abs(waveBuf[i]);
-      if (v > maxAbs) maxAbs = v;
-    }
-    const SCALE = maxAbs * 1.15;
-    const mid   = H / 2;
-
-    // ── Background grid ──────────────────────────────────────────────────────
-    ctx.strokeStyle = "#e0e3e5";
-    ctx.lineWidth = 1;
-    for (let row = 0; row <= 4; row++) {
-      const y = H * row / 4;
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
-    }
-    for (let col = 0; col <= 10; col++) {
-      const x = W * col / 10;
-      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+    if (n === 0) {
+      ctx.fillStyle = color("on-surface-variant");
+      ctx.font = "13px Inter, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("No samples from the ESP32 yet", W / 2, H / 2);
+      return;
     }
 
-    // ── Zero line ────────────────────────────────────────────────────────────
-    ctx.strokeStyle = "rgba(118,119,125,0.3)";
-    ctx.lineWidth = 1;
-    ctx.setLineDash([4, 4]);
-    ctx.beginPath(); ctx.moveTo(0, mid); ctx.lineTo(W, mid); ctx.stroke();
+    // Sumbu waktu: -window … 0 ms (0 = sampel terbaru)
+    const winMs = (n / raw.fs) * 1000;
+    ctx.strokeStyle = color("outline-variant");
+    ctx.fillStyle = color("on-surface-variant");
+    ctx.textAlign = "center";
+    const tStep = winMs > 300 ? 100 : 50;
+    for (let t = 0; t <= winMs + 1e-6; t += tStep) {
+      const x = Math.round(PAD.l + PW * (1 - t / winMs)) + 0.5;
+      ctx.globalAlpha = 0.35;
+      ctx.beginPath(); ctx.moveTo(x, PAD.t); ctx.lineTo(x, H - PAD.b); ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.fillText(t === 0 ? "0 ms" : `-${t}`, x, H - 6);
+    }
+
+    // Penanda stimulus
+    ctx.strokeStyle = color("on-tertiary-container");
+    ctx.setLineDash([3, 3]);
+    for (let i = 0; i < raw.stim.length; i++) {
+      if (!raw.stim[i]) continue;
+      const x = Math.round(PAD.l + (PW * i) / n) + 0.5;
+      ctx.beginPath(); ctx.moveTo(x, PAD.t); ctx.lineTo(x, H - PAD.b); ctx.stroke();
+    }
     ctx.setLineDash([]);
 
-    // ── Stimulus markers ─────────────────────────────────────────────────────
-    for (let i = 0; i < WAVE_SAMPLES; i++) {
-      if (stimBuf[i] === 1) {
-        const x = W * i / WAVE_SAMPLES;
-        ctx.save();
-        ctx.strokeStyle = "rgba(210,153,34,0.7)";
-        ctx.lineWidth = 1.5;
-        ctx.setLineDash([3, 3]);
-        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
-        ctx.restore();
-        ctx.fillStyle = "rgba(210,153,34,0.9)";
-        ctx.font = "bold 9px 'Courier New'";
-        ctx.textAlign = "left";
-        ctx.fillText("S", x + 2, 12);
+    lanes.forEach((lane, k) => {
+      const top = PAD.t + k * laneH, mid = top + laneH / 2;
+      const d = lane.data;
+      // Pusatkan pada rata-rata (offset DC elektroda bisa besar)
+      let mean = 0;
+      for (let i = 0; i < d.length; i++) mean += d[i];
+      mean = d.length ? mean / d.length : 0;
+      let maxAbs = 0;
+      for (let i = 0; i < d.length; i++) maxAbs = Math.max(maxAbs, Math.abs(d[i] - mean));
+      const yMax = niceCeil(Math.max(1, maxAbs * 1.1));
+      const yOf = (v: number) => mid - ((v - mean) / yMax) * (laneH / 2 - 4);
+
+      ctx.strokeStyle = color("outline-variant");
+      ctx.globalAlpha = 0.6;
+      ctx.beginPath(); ctx.moveTo(PAD.l, Math.round(mid) + 0.5); ctx.lineTo(W - PAD.r, Math.round(mid) + 0.5); ctx.stroke();
+      if (k > 0) { ctx.beginPath(); ctx.moveTo(0, Math.round(top) + 0.5); ctx.lineTo(W, Math.round(top) + 0.5); ctx.stroke(); }
+      ctx.globalAlpha = 1;
+
+      ctx.fillStyle = lane.color;
+      ctx.textAlign = "left";
+      ctx.font = "700 10px ui-monospace, SFMono-Regular, Menlo, monospace";
+      ctx.fillText(lane.name, 4, top + 14);
+      ctx.fillStyle = color("on-surface-variant");
+      ctx.font = "10px ui-monospace, SFMono-Regular, Menlo, monospace";
+      ctx.fillText(`±${fmtUv(yMax)} µV`, 4, top + 27);
+
+      // Min/max per kolom piksel supaya 8000 sampel tetap terbaca
+      ctx.strokeStyle = lane.color;
+      ctx.lineWidth = 1.25;
+      ctx.beginPath();
+      const cols = Math.max(1, Math.floor(PW));
+      for (let c = 0; c < cols; c++) {
+        const a = Math.floor((c / cols) * d.length), b = Math.max(a + 1, Math.floor(((c + 1) / cols) * d.length));
+        let lo = Infinity, hi = -Infinity;
+        for (let i = a; i < b && i < d.length; i++) { lo = Math.min(lo, d[i]); hi = Math.max(hi, d[i]); }
+        if (lo === Infinity) continue;
+        const x = PAD.l + c + 0.5;
+        if (c === 0) ctx.moveTo(x, yOf(hi)); else ctx.lineTo(x, yOf(hi));
+        ctx.lineTo(x, yOf(lo));
       }
-    }
-
-    // ── Waveform ─────────────────────────────────────────────────────────────
-    ctx.strokeStyle = "#3fb950";
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    let first = true;
-    for (let i = 0; i < WAVE_SAMPLES; i++) {
-      const v = waveBuf[i];
-      const x = W * i / WAVE_SAMPLES;
-      const y = mid - (v / SCALE) * mid * 0.85;
-      first ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-      first = false;
-    }
-    ctx.stroke();
-
-    // ── Y-axis labels (auto unit) ────────────────────────────────────────────
-    ctx.fillStyle = "#76777d";
-    ctx.font = "10px 'Courier New'";
-    ctx.textAlign = "left";
-    const fmt = (v: number) => Math.abs(v) >= 1 ? v.toFixed(2) : v.toFixed(4);
-    const unit = Math.abs(SCALE) < 1 ? "mV" : "µV";
-    [SCALE, SCALE / 2, 0, -SCALE / 2, -SCALE].forEach((v, i) => {
-      const label = v === 0 ? "0" : `${v > 0 ? "+" : ""}${fmt(v)}${unit}`;
-      ctx.fillText(label, 4, H * i / 4 + 12);
+      ctx.stroke();
     });
-
-    // ── Current value badge ──────────────────────────────────────────────────
-    const valDisp = `${currentMv >= 0 ? "+" : ""}${currentMv.toFixed(4)}`;
-    const badgeW  = 130;
-    const badgeH  = 36;
-    const bx      = W - badgeW - 8;
-    const by      = 8;
-    ctx.fillStyle = "rgba(247,249,251,0.92)";
-    ctx.strokeStyle = "#c6c6cd";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.roundRect?.(bx, by, badgeW, badgeH, 5) ?? (() => { ctx.rect(bx, by, badgeW, badgeH); })();
-    ctx.fill(); ctx.stroke();
-    ctx.fillStyle = currentMv >= 0 ? "#3fb950" : "#f85149";
-    ctx.font = "bold 12px 'Courier New'";
-    ctx.textAlign = "left";
-    ctx.fillText(`${valDisp} ${unit}`, bx + 8, by + 15);
-    ctx.fillStyle = "#76777d";
-    ctx.font = "10px 'Courier New'";
-    ctx.fillText(`raw: ${currentRaw}`, bx + 8, by + 29);
-
-  }, [waveBuf, stimBuf, currentMv, currentRaw]);
+  }, [raw]);
 
   return (
     <canvas
-      ref={canvasRef}
-      className="w-full rounded"
-      style={{ height: 200, display: "block", background: "#ffffff" }}
+      ref={ref}
+      className="w-full block rounded-lg bg-surface-container-lowest"
+      style={{ height }}
+      role="img"
+      aria-label="Raw EEG signal, two channels"
     />
   );
 }

@@ -145,3 +145,16 @@ func TestSendToUnknownDevice(t *testing.T) {
 		t.Fatalf("ESP menerima %q, err %v", msg, err)
 	}
 }
+
+func TestDetailCountsFrames(t *testing.T) {
+	proc, hub, conn := newHubServer(t)
+	send(t, conn, `[{"t":1,"r":10,"s":1},{"t":2,"r":20,"s":0},{"t":3,"r":-30,"s":0}]`)
+	waitRaw(t, proc, 3)
+	d := hub.Detail()
+	if len(d) != 1 || d[0].Frames != 3 || d[0].LastFrameAt == "" {
+		t.Fatalf("detail = %+v, want frames=3 dan last_frame_at terisi", d)
+	}
+	if r := proc.Result(); r.FrameCount != 3 || r.StimCount != 1 {
+		t.Fatalf("frame_count=%d stim_count=%d, want 3 dan 1", r.FrameCount, r.StimCount)
+	}
+}

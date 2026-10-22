@@ -18,6 +18,11 @@ type Document struct {
 	TrialCount   int             `json:"trial_count" bson:"trial_count"`
 	SamplingRate int             `json:"sampling_rate" bson:"sampling_rate"`
 	EpochMs      float64         `json:"epoch_ms" bson:"epoch_ms"`
+	PreStimMs    float64         `json:"pre_stim_ms" bson:"pre_stim_ms"`
+	Device       string          `json:"device,omitempty" bson:"device,omitempty"`
+	Ear          string          `json:"ear,omitempty" bson:"ear,omitempty"`
+	StimDB       int             `json:"stim_db,omitempty" bson:"stim_db,omitempty"`
+	Note         string          `json:"note,omitempty" bson:"note,omitempty"`
 	ABRAverage   [][]float64     `json:"abr_average" bson:"abr_average"`
 	ABRSnapshots []Snapshot      `json:"abr_snapshots" bson:"abr_snapshots"`
 	SNR          []float64       `json:"snr" bson:"snr"`
@@ -34,4 +39,7 @@ type Meta struct {
 	Status     string    `json:"status" bson:"status"`
 	SNR        []float64 `json:"snr" bson:"snr"`
 	Verdict    string    `json:"verdict" bson:"verdict"`
+	Device     string    `json:"device,omitempty" bson:"device,omitempty"`
+	Ear        string    `json:"ear,omitempty" bson:"ear,omitempty"`
+	StimDB     int       `json:"stim_db,omitempty" bson:"stim_db,omitempty"`
 }

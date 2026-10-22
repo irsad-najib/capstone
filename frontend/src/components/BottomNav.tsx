@@ -17,14 +17,14 @@ export default function BottomNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 lg:hidden flex justify-around items-center px-2 py-2 bg-white/95 backdrop-blur-xl border-t border-outline-variant shadow-lg">
+    <nav className="bottom-nav fixed bottom-0 left-0 right-0 z-50 lg:hidden flex justify-around items-center px-2 py-1 bg-surface-container-lowest/95 backdrop-blur-xl border-t border-outline-variant print:hidden">
       {navItems.map(({ href, icon: Icon, label }) => {
         const isActive = pathname === href;
         return (
           <Link
             key={href}
             href={href}
-            className={`flex flex-col items-center gap-0.5 px-2 py-1 transition-colors ${
+            className={`min-h-12 min-w-12 flex flex-col items-center justify-center gap-0.5 px-2 py-1 transition-colors ${
               isActive ? "text-primary" : "text-on-surface-variant"
             }`}
           >
