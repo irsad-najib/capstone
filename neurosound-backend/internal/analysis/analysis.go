@@ -60,16 +60,16 @@ func detectWaves(avg []float64, fs int) []WaveInfo {
 		if start >= end {
 			continue
 		}
+		// Gelombang I/III/V adalah puncak positif (vertex-positif), jadi cari
+		// nilai terbesar, bukan |nilai| terbesar yang bisa jatuh ke lembah.
 		best := start
-		bestAbs := math.Abs(avg[start])
 		for i := start + 1; i <= end; i++ {
-			if v := math.Abs(avg[i]); v > bestAbs {
+			if avg[i] > avg[best] {
 				best = i
-				bestAbs = v
 			}
 		}
-		// Average masih nol (belum ada trial): tidak ada puncak yang bisa dilaporkan.
-		if bestAbs == 0 {
+		// Tidak ada puncak positif (average masih nol / hanya lembah): tidak dilaporkan.
+		if avg[best] <= 0 {
 			continue
 		}
 		out = append(out, WaveInfo{

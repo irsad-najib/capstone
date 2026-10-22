@@ -7,11 +7,14 @@ services:
       MONGO_URI: mongodb://mongo:27017
       MONGO_DB: neurosound
       LOG_TOKEN: ${LOG_TOKEN:-}  # dari .env; kosong = /logs & perintah terbuka
+      DUMMY_DIR: /app/dummy-data
     ports:
       # hanya localhost; akses publik lewat nginx + Cloudflare Tunnel
       - "127.0.0.1:8080:8080"
     volumes:
       - sessions:/app/data/sessions
+      # rekaman dummy ABR (.npz + ground_truth.json) untuk replay dari halaman admin
+      - ${DUMMY_HOST_DIR:-../../abr/dummy}:/app/dummy-data:ro
     depends_on:
       - mongo
 

@@ -148,11 +148,34 @@ export interface SaveRequest {
 }
 
 export interface DummyOptions {
+  source?: string;       // "synthetic" atau nama file .npz dari /api/v1/dummy/sources
   stims?: number;        // 0 = terus sampai di-stop
   noise_uv?: number;
   mains_uv?: number;
   no_response?: boolean;
   reset?: boolean;
+}
+
+export interface DummyWaveTruth {
+  latency_ms: number;
+  amplitude_uv: number;
+}
+
+export interface DummyRecording {
+  file: string;
+  level_db: number | null;
+  fs: number;
+  sweeps: number;
+  duration_s: number;
+  ground_truth?: { waves: Record<string, DummyWaveTruth>; artifact_sweeps: number } | null;
+}
+
+export interface DummySources {
+  sources: string[];
+  recordings: DummyRecording[];
+  threshold_db?: number | null;
+  dir?: string;
+  error?: string;
 }
 
 export interface DummyStatus {
@@ -162,6 +185,7 @@ export interface DummyStatus {
   frames: number;
   stims: number;
   last_error?: string;
+  recording?: DummyRecording;
 }
 
 export interface LogLine {
@@ -248,7 +272,10 @@ export const api = {
   /** GET /api/v1/dummy */
   dummy: () => get<DummyStatus>("/api/v1/dummy", 5000, true),
 
-  /** POST /api/v1/dummy/start — data ABR sintetis dari server */
+  /** GET /api/v1/dummy/sources — "synthetic" + rekaman .npz di server */
+  dummySources: () => get<DummySources>("/api/v1/dummy/sources", 30_000, true),
+
+  /** POST /api/v1/dummy/start — data ABR sintetis / replay rekaman dari server */
   dummyStart: (opt: DummyOptions) => post<DummyStatus>("/api/v1/dummy/start", opt, true),
 
   /** POST /api/v1/dummy/stop */

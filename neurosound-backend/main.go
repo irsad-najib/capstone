@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"os"
@@ -76,6 +77,9 @@ func main() {
 		start: time.Now(), stim: stimState{DB: defaultStimDB}}
 	a.hub = ws.NewHub(proc, abrSSE, rawSSE)
 	a.dummy = dummy.New(proc)
+	if dir := getenv("DUMMY_DIR", "../../abr/dummy"); dir != "" {
+		a.dummy.WithLibrary(dummy.NewLibrary(dir, pythonPath, getenv("DUMMY_SCRIPT", "dsp/dummy_npz.py")))
+	}
 
 	go a.tickStreams()
 
@@ -99,6 +103,7 @@ func main() {
 	mux.HandleFunc("/api/v1/broadcast", a.auth(a.handleBroadcast))
 	mux.HandleFunc("/api/v1/command", a.auth(a.handleCommand))
 	mux.HandleFunc("/api/v1/dummy", a.auth(a.handleDummy))
+	mux.HandleFunc("/api/v1/dummy/sources", a.auth(a.handleDummySources))
 	mux.HandleFunc("/api/v1/dummy/start", a.auth(a.handleDummyStart))
 	mux.HandleFunc("/api/v1/dummy/stop", a.auth(a.handleDummyStop))
 	mux.HandleFunc("/api/v1/logs", a.auth(a.handleLogs))
@@ -316,8 +321,23 @@ func (a *app) handleDummy(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, a.dummy.Status())
 }
 
-// handleDummyStart: POST {"stims":600,"noise_uv":4,"mains_uv":1.5,"no_response":false,"reset":true}
-// (semua field opsional; stims 0 = jalan terus sampai /dummy/stop).
+// handleDummySources: daftar sumber dummy, "synthetic" + rekaman .npz di DUMMY_DIR.
+func (a *app) handleDummySources(w http.ResponseWriter, r *http.Request) {
+	out := map[string]any{"sources": []string{dummy.SourceSynthetic}, "recordings": []dummy.Recording{}}
+	if lib := a.dummy.Library(); lib != nil {
+		c, err := lib.Catalog(r.Context())
+		if err != nil {
+			out["error"] = err.Error()
+		} else {
+			out["dir"], out["threshold_db"], out["recordings"] = c.Dir, c.ThresholdDB, c.Recordings
+		}
+	}
+	writeJSON(w, out)
+}
+
+// handleDummyStart: POST {"source":"synthetic","stims":600,"noise_uv":4,"mains_uv":1.5,"no_response":false,"reset":true}
+// (semua field opsional; stims 0 = jalan terus sampai /dummy/stop). source boleh
+// nama file .npz dari /api/v1/dummy/sources untuk replay rekaman.
 func (a *app) handleDummyStart(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -331,7 +351,16 @@ func (a *app) handleDummyStart(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err := a.dummy.Start(opt); err != nil {
-		http.Error(w, err.Error(), http.StatusConflict)
+		code := http.StatusInternalServerError
+		switch {
+		case errors.Is(err, dummy.ErrRunning):
+			code = http.StatusConflict
+		case errors.Is(err, dummy.ErrUnknownFile):
+			code = http.StatusNotFound
+		case errors.Is(err, dummy.ErrNoLibrary):
+			code = http.StatusBadRequest
+		}
+		http.Error(w, err.Error(), code)
 		return
 	}
 	writeJSON(w, a.dummy.Status())

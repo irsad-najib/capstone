@@ -69,3 +69,13 @@ func TestComputeZeroAverageHasNoWaves(t *testing.T) {
 		t.Fatalf("average nol tidak boleh menghasilkan gelombang: %+v", d)
 	}
 }
+
+// Lembah negatif yang lebih dalam dari puncak tidak boleh terpilih sebagai gelombang.
+func TestDetectWavesIgnoresDeeperTrough(t *testing.T) {
+	avg := synth(800, map[float64]float64{1.6: 0.3, 3.7: 0.25, 5.6: 0.5, 7.0: -0.9})
+	for _, w := range Compute(avg, fs, 10, "Konvergen").Waves {
+		if w.Name == "V" && (math.Abs(w.Latency-5.6) > 1000.0/fs || w.Amp <= 0) {
+			t.Fatalf("wave V = %+v, want puncak positif di 5.6 ms", w)
+		}
+	}
+}

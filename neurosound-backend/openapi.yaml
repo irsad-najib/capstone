@@ -188,13 +188,41 @@ paths:
           content:
             application/json:
               example: {running: true, options: {stims: 600, noise_uv: 4, mains_uv: 1.5, no_response: false, reset: true}, started_at: "2026-10-22T04:30:00Z", frames: 160000, stims: 110}
+  /api/v1/dummy/sources:
+    get:
+      tags: [Dummy]
+      summary: Daftar sumber dummy (synthetic + rekaman .npz di server)
+      description: |
+        Rekaman dibaca dari `DUMMY_DIR` (default `abr/dummy`, hasil `abr/abr_dummy.py`)
+        beserta ground truth per level dari `ground_truth.json`.
+      security: [{logToken: []}, {logTokenQuery: []}]
+      responses:
+        "200":
+          description: OK (`error` terisi kalau folder rekaman tidak bisa dibaca)
+          content:
+            application/json:
+              example:
+                sources: [synthetic]
+                dir: /app/dummy-data
+                threshold_db: 25
+                recordings:
+                  - file: abr_dummy_80dB.npz
+                    level_db: 80
+                    fs: 20000
+                    sweeps: 2000
+                    duration_s: 95.2
+                    ground_truth:
+                      waves: {I: {latency_ms: 1.6, amplitude_uv: 0.3}, III: {latency_ms: 3.7, amplitude_uv: 0.25}, V: {latency_ms: 5.576, amplitude_uv: 0.473}}
+                      artifact_sweeps: 86
   /api/v1/dummy/start:
     post:
       tags: [Dummy]
-      summary: Mulai data ABR sintetis di server
+      summary: Mulai data ABR dummy di server (sintetis atau replay rekaman)
       description: |
-        Membangkitkan sinyal 16 kHz (Wave I/III/V di 1.6/3.7/5.6 ms + noise + 50 Hz) dan
-        memasukkannya ke processor lewat jalur yang sama dengan frame ESP32.
+        `source: "synthetic"` membangkitkan sinyal 16 kHz (Wave I/III/V di 1.6/3.7/5.6 ms + noise + 50 Hz).
+        `source: "<file>.npz"` memutar rekaman dari `/api/v1/dummy/sources` (di-resample ke 16 kHz,
+        diulang kalau `stims` melebihi jumlah sweep; noise_uv/mains_uv/no_response diabaikan).
+        Sinyal masuk ke processor lewat jalur yang sama dengan frame ESP32.
         Kalau DSP lebih lambat dari real-time, generator ikut melambat.
       security: [{logToken: []}, {logTokenQuery: []}]
       requestBody:
@@ -204,6 +232,7 @@ paths:
             schema:
               type: object
               properties:
+                source: {type: string, default: synthetic, example: abr_dummy_80dB.npz}
                 stims: {type: integer, default: 0, description: "0 = jalan terus sampai /dummy/stop"}
                 noise_uv: {type: number, default: 4}
                 mains_uv: {type: number, default: 1.5}
@@ -212,6 +241,10 @@ paths:
       responses:
         "200":
           description: Berjalan (status generator)
+        "400":
+          description: Body bukan JSON, atau replay tidak aktif (DUMMY_DIR kosong)
+        "404":
+          description: Rekaman tidak ditemukan
         "409":
           description: Dummy sudah berjalan
   /api/v1/dummy/stop:

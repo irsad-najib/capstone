@@ -7,18 +7,29 @@ import MenuButton from "@/components/MenuButton";
 import ABRWaveformChart from "@/components/ABRWaveformChart";
 import { Card, StatusDot } from "@/components/ui";
 import { useBackend } from "@/hooks/useBackend";
-import { api, backendUrl, type DummyOptions } from "@/lib/api";
+import { api, backendUrl, type DummyOptions, type DummyRecording } from "@/lib/api";
 import { formatAgo, formatDuration, statusLabel } from "@/lib/abr";
 import { useSettings, writeSettings } from "@/lib/settings";
 import { MdAdminPanelSettings, MdPlayArrow, MdRefresh, MdScience, MdStop, MdTerminal } from "react-icons/md";
 
-const DEFAULT_OPTS: Required<DummyOptions> = { stims: 600, noise_uv: 4, mains_uv: 1.5, no_response: false, reset: true };
+const SYNTHETIC = "synthetic";
+const DEFAULT_OPTS: Required<DummyOptions> = { source: SYNTHETIC, stims: 600, noise_uv: 4, mains_uv: 1.5, no_response: false, reset: true };
+
+const recordingLabel = (r: DummyRecording) =>
+  `${r.level_db ?? "?"} dB · ${r.sweeps.toLocaleString()} sweeps · ${Math.round(r.duration_s)} s`;
+
+const truthText = (r?: DummyRecording | null) => {
+  const w = r?.ground_truth?.waves;
+  if (!w || Object.keys(w).length === 0) return "no response (below threshold)";
+  return ["I", "III", "V"].filter(k => w[k]).map(k => `${k} ${w[k].latency_ms.toFixed(2)} ms`).join(" · ");
+};
 
 export default function AdminPage() {
   const { adminToken } = useSettings();
   const [token, setToken] = useState<string | null>(null);
 
   const dummy = useBackend(api.dummy, 1_000);
+  const sources = useBackend(api.dummySources, 60_000);
   const abr   = useBackend(api.abrResult, 2_000);
   const devs  = useBackend(api.devices, 5_000);
   const logs  = useBackend(api.logs, 3_000);
@@ -31,6 +42,13 @@ export default function AdminPage() {
 
   const unauthorized = [dummy.error, logs.error].some(e => e?.toLowerCase().includes("unauthorized"));
   const st = dummy.data;
+  const recordings = sources.data?.recordings ?? [];
+  const selected = recordings.find(r => r.file === opts.source);
+  const isSynthetic = opts.source === SYNTHETIC;
+  const pickSource = (source: string) => {
+    const rec = recordings.find(r => r.file === source);
+    setOpts(o => ({ ...o, source, stims: rec ? rec.sweeps : DEFAULT_OPTS.stims }));
+  };
   const r = abr.data;
 
   async function act(fn: () => Promise<unknown>, ok: string) {
@@ -108,22 +126,37 @@ export default function AdminPage() {
                   <Stat label="Frames sent" value={st.frames.toLocaleString()} />
                   <Stat label="Stimuli sent" value={`${st.stims.toLocaleString()}${st.options.stims ? ` / ${st.options.stims}` : ""}`} />
                   <Stat label="Signal time" value={formatDuration(st.frames / 16000)} />
-                  <Stat label="Mode" value={st.options.no_response ? "no response" : "with ABR"} />
+                  <Stat label="Mode" value={st.recording ? `recording ${st.recording.level_db ?? "?"} dB` : st.options.no_response ? "synthetic, no response" : "synthetic, with ABR"} />
                 </dl>
+              )}
+              {st?.running && st.recording && (
+                <p className="text-xs text-on-surface-variant">Ground truth: <span className="font-mono text-on-surface">{truthText(st.recording)}</span></p>
               )}
               {st?.last_error && <p className="text-xs font-mono text-error break-all">DSP: {st.last_error}</p>}
 
               <fieldset disabled={st?.running || busy} className="grid grid-cols-3 gap-2 text-xs disabled:opacity-60">
+                <label className="col-span-3 space-y-1"><span className="text-on-surface-variant">Source</span>
+                  <select value={opts.source} onChange={e => pickSource(e.target.value)} className="w-full min-h-10 rounded-lg border border-outline-variant bg-surface-container-lowest px-2">
+                    <option value={SYNTHETIC}>Synthetic (generated)</option>
+                    {recordings.length > 0 && (
+                      <optgroup label={`Server recordings${sources.data?.threshold_db != null ? ` (threshold ${sources.data.threshold_db} dB)` : ""}`}>
+                        {recordings.map(r => <option key={r.file} value={r.file}>{recordingLabel(r)}</option>)}
+                      </optgroup>
+                    )}
+                  </select>
+                  {sources.data?.error && <span className="block text-error font-mono break-all">{sources.data.error}</span>}
+                  {selected && <span className="block text-on-surface-variant">Ground truth: <span className="font-mono text-on-surface">{truthText(selected)}</span></span>}
+                </label>
                 <label className="space-y-1"><span className="text-on-surface-variant">Stimuli (0 = ∞)</span>
                   <input type="number" min={0} step={100} value={opts.stims} onChange={num("stims")} className="w-full min-h-10 rounded-lg border border-outline-variant bg-surface-container-lowest px-2 font-mono" />
                 </label>
                 <label className="space-y-1"><span className="text-on-surface-variant">Noise (µV RMS)</span>
-                  <input type="number" min={0} step={0.5} value={opts.noise_uv} onChange={num("noise_uv")} className="w-full min-h-10 rounded-lg border border-outline-variant bg-surface-container-lowest px-2 font-mono" />
+                  <input type="number" min={0} step={0.5} value={opts.noise_uv} onChange={num("noise_uv")} disabled={!isSynthetic} className="disabled:opacity-50 w-full min-h-10 rounded-lg border border-outline-variant bg-surface-container-lowest px-2 font-mono" />
                 </label>
                 <label className="space-y-1"><span className="text-on-surface-variant">50 Hz (µV)</span>
-                  <input type="number" min={0} step={0.5} value={opts.mains_uv} onChange={num("mains_uv")} className="w-full min-h-10 rounded-lg border border-outline-variant bg-surface-container-lowest px-2 font-mono" />
+                  <input type="number" min={0} step={0.5} value={opts.mains_uv} onChange={num("mains_uv")} disabled={!isSynthetic} className="disabled:opacity-50 w-full min-h-10 rounded-lg border border-outline-variant bg-surface-container-lowest px-2 font-mono" />
                 </label>
-                <label className="col-span-3 flex items-center gap-2"><input type="checkbox" checked={opts.no_response} onChange={e => setOpts(o => ({ ...o, no_response: e.target.checked }))} />No ABR response (should end as Refer)</label>
+                <label className="col-span-3 flex items-center gap-2"><input type="checkbox" checked={opts.no_response} disabled={!isSynthetic} onChange={e => setOpts(o => ({ ...o, no_response: e.target.checked }))} />No ABR response (should end as Refer)</label>
                 <label className="col-span-3 flex items-center gap-2"><input type="checkbox" checked={opts.reset} onChange={e => setOpts(o => ({ ...o, reset: e.target.checked }))} />Reset the running average first</label>
               </fieldset>
 
