@@ -9,6 +9,11 @@
  *
  * Probe captive portal: Android /generate_204, iOS /hotspot-detect.html,
  * Windows /ncsi.txt & /connecttest.txt — semua (dan URL lain) di-redirect ke /.
+ * DHCP juga mengiklankan option 114 (RFC 8910), dipakai Android 11+ / Samsung
+ * untuk membuka halaman login tanpa menebak lewat probe.
+ *
+ * Scan WiFi dilakukan sekali sebelum AP aktif (atau lewat /scan): scan saat
+ * ada klien membuat AP pindah channel dan HP bisa lepas.
  */
 
 #include "net.h"
@@ -46,6 +51,7 @@
 
 static EventGroupHandle_t               net_events;
 static esp_netif_t                     *sta_netif;
+static esp_netif_t                     *ap_netif;
 static esp_websocket_client_handle_t    ws;
 static net_cmd_cb_t                     cmd_cb;
 static bool                             portal_mode;
@@ -305,20 +311,27 @@ static void html_escape(char *out, size_t out_sz, const char *in)
     out[n] = '\0';
 }
 
+static wifi_ap_record_t recs[16];
+static uint16_t         scan_count;
+
+/* Scan blocking ~2 detik. */
+static void wifi_scan(void)
+{
+    wifi_scan_config_t sc = { .show_hidden = false };
+    scan_count = 0;
+    if (esp_wifi_scan_start(&sc, true) == ESP_OK) {
+        scan_count = sizeof(recs) / sizeof(recs[0]);
+        esp_wifi_scan_get_ap_records(&scan_count, recs);
+    }
+    LOG("PORTAL", "scan: %u jaringan", scan_count);
+}
+
 static esp_err_t portal_root(httpd_req_t *req)
 {
     httpd_resp_set_type(req, "text/html");
     httpd_resp_send_chunk(req, PAGE_HEAD, HTTPD_RESP_USE_STRLEN);
 
-    /* Scan blocking ~2 detik; AP tetap jalan karena mode APSTA. */
-    wifi_scan_config_t sc = { .show_hidden = false };
-    uint16_t count = 0;
-    static wifi_ap_record_t recs[16];
-    if (esp_wifi_scan_start(&sc, true) == ESP_OK) {
-        count = sizeof(recs) / sizeof(recs[0]);
-        esp_wifi_scan_get_ap_records(&count, recs);
-    }
-
+    uint16_t count = scan_count;
     char line[400], esc[100];
     for (int i = 0; i < count; i++) {
         if (!recs[i].ssid[0]) continue;
@@ -337,7 +350,9 @@ static esp_err_t portal_root(httpd_req_t *req)
         "<form method=post action=/save>"
         "<input id=s name=ssid placeholder=SSID required maxlength=32>"
         "<input name=pass type=password placeholder=Password maxlength=63>"
-        "<button class=s>Simpan &amp; restart</button></form></div></body></html>",
+        "<button class=s>Simpan &amp; restart</button></form>"
+        "<p><a href=/scan style='color:#93c5fd'>Scan ulang WiFi</a> "
+        "<small>(HP bisa terputus sebentar)</small></p></div></body></html>",
         HTTPD_RESP_USE_STRLEN);
     return httpd_resp_send_chunk(req, NULL, 0);
 }
@@ -397,18 +412,53 @@ static esp_err_t portal_save(httpd_req_t *req)
 }
 
 /* Semua probe OS dan URL tak dikenal → redirect ke portal. */
+static esp_err_t portal_probe(httpd_req_t *req)
+{
+    httpd_resp_set_status(req, "302 Found");
+    httpd_resp_set_hdr(req, "Location", "http://192.168.4.1/");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    httpd_resp_set_type(req, "text/html");
+    return httpd_resp_sendstr(req, "<a href='http://192.168.4.1/'>ESP32 Setup</a>");
+}
+
 static esp_err_t portal_redirect(httpd_req_t *req, httpd_err_code_t err)
 {
     (void)err;
+    return portal_probe(req);
+}
+
+static esp_err_t portal_scan(httpd_req_t *req)
+{
+    wifi_scan();
     httpd_resp_set_status(req, "302 Found");
-    httpd_resp_set_hdr(req, "Location", "http://192.168.4.1/");
+    httpd_resp_set_hdr(req, "Location", "/");
     return httpd_resp_send(req, NULL, 0);
+}
+
+/* DHCP AP: DNS = 192.168.4.1 dan option 114 menunjuk ke portal. */
+static void dhcps_setup(void)
+{
+    static char uri[] = "http://192.168.4.1/";
+    esp_netif_dns_info_t dns = { 0 };
+    dns.ip.type             = ESP_IPADDR_TYPE_V4;
+    dns.ip.u_addr.ip4.addr  = ESP_IP4TOADDR(192, 168, 4, 1);
+    uint8_t offer_dns = 1;
+
+    esp_netif_dhcps_stop(ap_netif);
+    esp_netif_set_dns_info(ap_netif, ESP_NETIF_DNS_MAIN, &dns);
+    esp_netif_dhcps_option(ap_netif, ESP_NETIF_OP_SET, ESP_NETIF_DOMAIN_NAME_SERVER,
+                           &offer_dns, sizeof(offer_dns));
+    esp_err_t err = esp_netif_dhcps_option(ap_netif, ESP_NETIF_OP_SET,
+                                           ESP_NETIF_CAPTIVEPORTAL_URI, uri, strlen(uri));
+    if (err != ESP_OK) LOG("PORTAL", "option 114 gagal: %s", esp_err_to_name(err));
+    esp_netif_dhcps_start(ap_netif);
 }
 
 static void portal_start(void)
 {
     portal_mode = true;
     esp_wifi_disconnect();
+    wifi_scan();   /* sebelum AP aktif, supaya klien tidak terputus */
 
     wifi_config_t ap = {
         .ap = {
@@ -422,15 +472,31 @@ static void portal_start(void)
     };
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap));
+    dhcps_setup();
 
     httpd_handle_t srv;
     httpd_config_t hc = HTTPD_DEFAULT_CONFIG();
-    hc.stack_size = 8192;
+    hc.stack_size       = 8192;
+    hc.max_uri_handlers = 16;
+    hc.lru_purge_enable = true;   /* HP sering buka banyak socket sekaligus */
     ESP_ERROR_CHECK(httpd_start(&srv, &hc));
     const httpd_uri_t root = { .uri = "/",     .method = HTTP_GET,  .handler = portal_root };
     const httpd_uri_t save = { .uri = "/save", .method = HTTP_POST, .handler = portal_save };
+    const httpd_uri_t scan = { .uri = "/scan", .method = HTTP_GET,  .handler = portal_scan };
     httpd_register_uri_handler(srv, &root);
     httpd_register_uri_handler(srv, &save);
+    httpd_register_uri_handler(srv, &scan);
+
+    static const char *probes[] = {
+        "/generate_204", "/gen_204",                 /* Android, Samsung */
+        "/hotspot-detect.html", "/library/test/success.html",   /* Apple */
+        "/ncsi.txt", "/connecttest.txt", "/redirect", /* Windows */
+        "/canonical.html", "/success.txt",           /* Firefox, Linux */
+    };
+    for (size_t i = 0; i < sizeof(probes) / sizeof(probes[0]); i++) {
+        const httpd_uri_t u = { .uri = probes[i], .method = HTTP_GET, .handler = portal_probe };
+        httpd_register_uri_handler(srv, &u);
+    }
     httpd_register_err_handler(srv, HTTPD_404_NOT_FOUND, portal_redirect);
 
     xTaskCreatePinnedToCore(dns_task, "dns", 3072, NULL, 3, NULL, 1);
@@ -455,7 +521,7 @@ void net_start(net_cmd_cb_t on_command)
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     sta_netif = esp_netif_create_default_wifi_sta();
-    esp_netif_create_default_wifi_ap();
+    ap_netif  = esp_netif_create_default_wifi_ap();
 
     wifi_init_config_t wic = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&wic));
