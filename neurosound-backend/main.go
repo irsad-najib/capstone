@@ -10,10 +10,12 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"neurosound-backend/internal/buffer"
 	"neurosound-backend/internal/dsp"
+	"neurosound-backend/internal/dummy"
 	"neurosound-backend/internal/processor"
 	"neurosound-backend/internal/session"
 	"neurosound-backend/internal/sse"
@@ -30,10 +32,25 @@ type app struct {
 	proc   *processor.Processor
 	store  *session.Store
 	hub    *ws.Hub
+	dummy  *dummy.Generator
 	abrSSE *sse.Broadcaster
 	rawSSE *sse.Broadcaster
 	token  string // LOG_TOKEN; kosong = /logs dan perintah ke device terbuka
+	start  time.Time
+
+	stimMu sync.Mutex
+	stim   stimState
 }
+
+// stimState = status stimulus terakhir yang diminta dashboard (backend tidak
+// mendapat konfirmasi dari firmware, jadi ini status perintah, bukan status hardware).
+type stimState struct {
+	Running   bool   `json:"running"`
+	DB        int    `json:"db"`
+	StartedAt string `json:"started_at,omitempty"`
+}
+
+const defaultStimDB = 80
 
 func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -55,8 +72,10 @@ func main() {
 	}
 	defer store.Close(context.Background())
 
-	a := &app{proc: proc, store: store, abrSSE: abrSSE, rawSSE: rawSSE, token: os.Getenv("LOG_TOKEN")}
+	a := &app{proc: proc, store: store, abrSSE: abrSSE, rawSSE: rawSSE, token: os.Getenv("LOG_TOKEN"),
+		start: time.Now(), stim: stimState{DB: defaultStimDB}}
 	a.hub = ws.NewHub(proc, abrSSE, rawSSE)
+	a.dummy = dummy.New(proc)
 
 	go a.tickStreams()
 
@@ -75,8 +94,13 @@ func main() {
 	mux.HandleFunc("/api/v1/reset", a.handleReset)
 	mux.HandleFunc("/api/v1/stim", a.handleStim)
 	mux.HandleFunc("/api/v1/stim/set", a.handleStimSet)
+	mux.HandleFunc("/api/v1/stim/start", a.handleStimStart)
+	mux.HandleFunc("/api/v1/stim/stop", a.handleStimStop)
 	mux.HandleFunc("/api/v1/broadcast", a.auth(a.handleBroadcast))
 	mux.HandleFunc("/api/v1/command", a.auth(a.handleCommand))
+	mux.HandleFunc("/api/v1/dummy", a.auth(a.handleDummy))
+	mux.HandleFunc("/api/v1/dummy/start", a.auth(a.handleDummyStart))
+	mux.HandleFunc("/api/v1/dummy/stop", a.auth(a.handleDummyStop))
 	mux.HandleFunc("/api/v1/logs", a.auth(a.handleLogs))
 	mux.HandleFunc("/api/v1/logs/stream", a.auth(a.hub.Logs.ServeStream))
 	mux.HandleFunc("/logs", a.auth(handleLogsPage))
@@ -109,8 +133,10 @@ func (a *app) tickStreams() {
 
 func (a *app) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{
-		"status": "ok",
-		"time":   time.Now().Format(time.RFC3339),
+		"status":   "ok",
+		"time":     time.Now().Format(time.RFC3339),
+		"uptime_s": int(time.Since(a.start).Seconds()),
+		"mongo":    a.store.MongoEnabled(),
 	})
 }
 
@@ -131,8 +157,27 @@ func (a *app) handleSave(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	// Body opsional: {"ear":"left","device":"esp32-abr-001","stim_db":80,"note":"..."}
+	var meta struct {
+		Ear    string `json:"ear"`
+		Device string `json:"device"`
+		StimDB int    `json:"stim_db"`
+		Note   string `json:"note"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&meta)
+	if meta.Ear != "" && meta.Ear != "left" && meta.Ear != "right" {
+		http.Error(w, `ear harus "left" atau "right"`, http.StatusBadRequest)
+		return
+	}
 	filename := processor.FilenameNow()
 	doc := a.proc.SessionDocument(filename)
+	doc.Ear, doc.Device, doc.Note = meta.Ear, meta.Device, meta.Note
+	doc.StimDB = meta.StimDB
+	if doc.StimDB == 0 {
+		a.stimMu.Lock()
+		doc.StimDB = a.stim.DB
+		a.stimMu.Unlock()
+	}
 	if err := a.store.Save(r.Context(), doc); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -149,12 +194,49 @@ func (a *app) handleReset(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"ok": true})
 }
 
+// handleStim: GET = status stimulus, POST = jumlah trial (perilaku lama).
 func (a *app) handleStim(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		a.stimMu.Lock()
+		st := a.stim
+		a.stimMu.Unlock()
+		res := a.proc.Result()
+		writeJSON(w, map[string]any{"running": st.Running, "db": st.DB, "started_at": st.StartedAt,
+			"stim_count": res.StimCount, "trials": res.TrialCount})
+	case http.MethodPost:
+		writeJSON(w, map[string]any{"ok": true, "trials": a.proc.Result().TrialCount})
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// handleStimStart / handleStimStop mengirim "on"/"off" ke semua device
+// (perintah konsol firmware) lewat {"type":"command","cmd":...}.
+func (a *app) handleStimStart(w http.ResponseWriter, r *http.Request) { a.setStimRunning(w, r, true) }
+func (a *app) handleStimStop(w http.ResponseWriter, r *http.Request)  { a.setStimRunning(w, r, false) }
+
+func (a *app) setStimRunning(w http.ResponseWriter, r *http.Request, running bool) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	writeJSON(w, map[string]any{"ok": true, "trials": a.proc.Result().TrialCount})
+	cmd := "off"
+	if running {
+		cmd = "on"
+	}
+	out, _ := json.Marshal(map[string]string{"type": "command", "cmd": cmd})
+	sent := a.hub.Send(out)
+	a.stimMu.Lock()
+	a.stim.Running = running
+	if running {
+		a.stim.StartedAt = time.Now().Format(time.RFC3339)
+	} else {
+		a.stim.StartedAt = ""
+	}
+	st := a.stim
+	a.stimMu.Unlock()
+	writeJSON(w, map[string]any{"ok": true, "sent": sent, "running": st.Running, "db": st.DB, "started_at": st.StartedAt})
 }
 
 func (a *app) handleStimSet(w http.ResponseWriter, r *http.Request) {
@@ -165,7 +247,13 @@ func (a *app) handleStimSet(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		DB int `json:"db"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&body)
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.DB < 0 || body.DB > 120 {
+		http.Error(w, `body harus {"db": 0..120}`, http.StatusBadRequest)
+		return
+	}
+	a.stimMu.Lock()
+	a.stim.DB = body.DB
+	a.stimMu.Unlock()
 	msg, _ := json.Marshal(map[string]any{"cmd": "set_db", "value": body.DB})
 	writeJSON(w, map[string]any{"ok": true, "db": body.DB, "sent": a.hub.Send(msg)})
 }
@@ -222,6 +310,40 @@ func (a *app) handleCommand(w http.ResponseWriter, r *http.Request) {
 		a.hub.Logs.Add(body.Device, "[server] > "+body.Cmd)
 	}
 	writeJSON(w, map[string]any{"ok": true, "sent": sent})
+}
+
+func (a *app) handleDummy(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, a.dummy.Status())
+}
+
+// handleDummyStart: POST {"stims":600,"noise_uv":4,"mains_uv":1.5,"no_response":false,"reset":true}
+// (semua field opsional; stims 0 = jalan terus sampai /dummy/stop).
+func (a *app) handleDummyStart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	opt := dummy.Options{MainsUV: 1.5, Reset: true}
+	if r.ContentLength != 0 {
+		if err := json.NewDecoder(r.Body).Decode(&opt); err != nil {
+			http.Error(w, "body bukan JSON: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	if err := a.dummy.Start(opt); err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	writeJSON(w, a.dummy.Status())
+}
+
+func (a *app) handleDummyStop(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	a.dummy.Stop()
+	writeJSON(w, a.dummy.Status())
 }
 
 func (a *app) handleLogs(w http.ResponseWriter, r *http.Request) {

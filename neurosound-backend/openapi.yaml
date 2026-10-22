@@ -31,6 +31,8 @@ tags:
     description: Log ESP32 (halaman live di `/logs`)
   - name: ABR
   - name: Sesi
+  - name: Dummy
+    description: Data ABR sintetis dari server (halaman admin)
 paths:
   /api/v1/health:
     get:
@@ -41,7 +43,7 @@ paths:
           description: OK
           content:
             application/json:
-              example: {status: ok, time: "2026-10-21T06:20:50Z"}
+              example: {status: ok, time: "2026-10-21T06:20:50Z", uptime_s: 3600, mongo: true}
   /api/v1/devices:
     get:
       tags: [ESP32]
@@ -60,6 +62,8 @@ paths:
                     last_seen: "2026-10-21T13:20:50.123+07:00"
                     audio_test: {type: audio_test, device: esp32-audio-001, seq: 12, uptime_ms: 60000, "on": true, freq: 1000, level_dbfs: -20, ch: L+R}
                     audio_test_at: "2026-10-21T13:20:48.001+07:00"
+                    frames: 960000
+                    last_frame_at: "2026-10-21T13:20:50.120+07:00"
   /api/v1/stim/set:
     post:
       tags: [ESP32]
@@ -72,13 +76,37 @@ paths:
             schema:
               type: object
               properties:
-                db: {type: integer, minimum: 0, maximum: 100, example: 60}
+                db: {type: integer, minimum: 0, maximum: 120, example: 60}
       responses:
         "200":
-          description: Terkirim (`sent_to` = jumlah ESP32 yang menerima)
+          description: Terkirim (`sent` = jumlah ESP32 yang menerima); level disimpan di status stimulus
           content:
             application/json:
-              example: {ok: true, db: 60, sent_to: 1}
+              example: {ok: true, db: 60, sent: 1}
+        "400":
+          description: Body bukan JSON atau db di luar 0..120
+  /api/v1/stim/start:
+    post:
+      tags: [ESP32]
+      summary: Mulai stimulus
+      description: Mengirim `{"type":"command","cmd":"on"}` ke semua ESP32 dan menandai stimulus berjalan.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              example: {ok: true, sent: 1, running: true, db: 80, started_at: "2026-10-21T06:20:50Z"}
+  /api/v1/stim/stop:
+    post:
+      tags: [ESP32]
+      summary: Hentikan stimulus
+      description: Mengirim `{"type":"command","cmd":"off"}` ke semua ESP32.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              example: {ok: true, sent: 1, running: false, db: 80}
   /api/v1/command:
     post:
       tags: [ESP32]
@@ -149,6 +177,51 @@ paths:
           content:
             application/json:
               example: {ok: true, msg: "off", sent: 1}
+  /api/v1/dummy:
+    get:
+      tags: [Dummy]
+      summary: Status generator data dummy
+      security: [{logToken: []}, {logTokenQuery: []}]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              example: {running: true, options: {stims: 600, noise_uv: 4, mains_uv: 1.5, no_response: false, reset: true}, started_at: "2026-10-22T04:30:00Z", frames: 160000, stims: 110}
+  /api/v1/dummy/start:
+    post:
+      tags: [Dummy]
+      summary: Mulai data ABR sintetis di server
+      description: |
+        Membangkitkan sinyal 16 kHz (Wave I/III/V di 1.6/3.7/5.6 ms + noise + 50 Hz) dan
+        memasukkannya ke processor lewat jalur yang sama dengan frame ESP32.
+        Kalau DSP lebih lambat dari real-time, generator ikut melambat.
+      security: [{logToken: []}, {logTokenQuery: []}]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                stims: {type: integer, default: 0, description: "0 = jalan terus sampai /dummy/stop"}
+                noise_uv: {type: number, default: 4}
+                mains_uv: {type: number, default: 1.5}
+                no_response: {type: boolean, default: false, description: "Tanpa ABR → verdict Refer"}
+                reset: {type: boolean, default: true, description: "Reset rata-rata sebelum mulai"}
+      responses:
+        "200":
+          description: Berjalan (status generator)
+        "409":
+          description: Dummy sudah berjalan
+  /api/v1/dummy/stop:
+    post:
+      tags: [Dummy]
+      summary: Hentikan data dummy
+      security: [{logToken: []}, {logTokenQuery: []}]
+      responses:
+        "200":
+          description: Status setelah berhenti
   /api/v1/logs:
     get:
       tags: [Log]
@@ -230,6 +303,16 @@ paths:
             application/json:
               example: {ok: true}
   /api/v1/stim:
+    get:
+      tags: [ESP32]
+      summary: Status stimulus
+      description: Status perintah terakhir dari dashboard (firmware tidak mengirim konfirmasi).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              example: {running: true, db: 80, started_at: "2026-10-21T06:20:50Z", stim_count: 1250, trials: 1200}
     post:
       tags: [ABR]
       summary: Jumlah trial saat ini
@@ -243,12 +326,25 @@ paths:
     post:
       tags: [Sesi]
       summary: Simpan hasil ABR saat ini sebagai sesi
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ear: {type: string, enum: [left, right]}
+                device: {type: string, example: esp32-abr-001}
+                stim_db: {type: integer, example: 80, description: "Kosong = level dari status stimulus"}
+                note: {type: string}
       responses:
         "200":
           description: Tersimpan
           content:
             application/json:
-              example: {ok: true, file: "abr_20261021_062050.json"}
+              example: {ok: true, file: "eeg_abr_1792988450.json"}
+        "400":
+          description: ear bukan left/right
   /api/v1/sessions:
     get:
       tags: [Sesi]
@@ -299,6 +395,9 @@ components:
             items: {type: number}
         sampling_rate: {type: integer, example: 16000}
         epoch_ms: {type: number, example: 60}
+        pre_stim_ms: {type: number, example: 10, description: "Bagian epoch sebelum stimulus; abr_average[i] ada di t = i/fs - pre_stim_ms"}
+        stim_count: {type: integer, description: Jumlah penanda stimulus yang diterima sejak reset}
+        frame_count: {type: integer, description: Jumlah frame yang diterima sejak reset}
         quality: {type: string}
         status: {type: string}
         snr:

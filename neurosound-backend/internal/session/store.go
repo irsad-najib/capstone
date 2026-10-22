@@ -50,6 +50,9 @@ func NewStore(ctx context.Context, mongoURI, dbName, dir string) (*Store, error)
 	return s, nil
 }
 
+// MongoEnabled = sesi juga disimpan ke MongoDB (bukan hanya file JSON).
+func (s *Store) MongoEnabled() bool { return s.client != nil }
+
 func (s *Store) Close(ctx context.Context) error {
 	if s.client == nil {
 		return nil
@@ -162,6 +165,9 @@ func metas(docs []Document) []Meta {
 			Status:     d.Status,
 			SNR:        d.SNR,
 			Verdict:    d.Analysis.Verdict,
+			Device:     d.Device,
+			Ear:        d.Ear,
+			StimDB:     d.StimDB,
 		}
 	}
 	return out

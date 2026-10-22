@@ -44,12 +44,16 @@ type DeviceStatus struct {
 	LastSeen    string          `json:"last_seen,omitempty"`
 	AudioTest   json.RawMessage `json:"audio_test,omitempty"`
 	AudioTestAt string          `json:"audio_test_at,omitempty"`
+	Frames      uint64          `json:"frames"`
+	LastFrameAt string          `json:"last_frame_at,omitempty"`
 }
 
 type deviceState struct {
 	lastSeen  time.Time
 	audio     json.RawMessage
 	audioSeen time.Time
+	frames    uint64
+	lastFrame time.Time
 }
 
 type Hub struct {
@@ -103,7 +107,10 @@ func (h *Hub) Detail() []DeviceStatus {
 	}
 	out := make([]DeviceStatus, 0, len(h.state))
 	for id, st := range h.state {
-		d := DeviceStatus{ID: id, Connected: conns[id] > 0, Connections: conns[id], AudioTest: st.audio}
+		d := DeviceStatus{ID: id, Connected: conns[id] > 0, Connections: conns[id], AudioTest: st.audio, Frames: st.frames}
+		if !st.lastFrame.IsZero() {
+			d.LastFrameAt = st.lastFrame.Format(devlog.TimeLayout)
+		}
 		if !st.lastSeen.IsZero() {
 			d.LastSeen = st.lastSeen.Format(devlog.TimeLayout)
 		}
@@ -251,6 +258,11 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		frameCount += uint64(len(frames))
+		h.mu.Lock()
+		st := h.touch(deviceID, time.Now())
+		st.frames += uint64(len(frames))
+		st.lastFrame = st.lastSeen
+		h.mu.Unlock()
 		if now := time.Now(); now.Sub(lastLog) >= time.Second {
 			log.Printf("[ws] %s | frame #%d (+%d/msg) | last: %s", deviceID, frameCount, len(frames), raw)
 			lastLog = now

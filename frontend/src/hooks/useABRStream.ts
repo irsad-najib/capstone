@@ -1,241 +1,282 @@
 "use client";
 /**
  * useABRStream
- * Hook utama yang menghubungkan ke backend Go via SSE.
- * Jika backend offline → otomatis fallback ke mode simulasi.
+ * Hook utama halaman scan: koneksi ke backend Go via SSE.
  *
- * Endpoint yang digunakan:
- *   GET /api/v1/health        — cek koneksi (polling 5s)
- *   GET /api/v1/raw/stream    — SSE: raw ADC samples (200ms interval)
- *   GET /api/v1/abr/stream    — SSE: ABR average + stats (2s interval)
- *   GET /api/v1/devices       — daftar perangkat terhubung
+ * Endpoint:
+ *   GET /api/v1/health        — cek koneksi (polling 5 s)
+ *   GET /api/v1/raw/stream    — SSE: 500 ms sinyal mentah terakhir, tiap 200 ms
+ *   GET /api/v1/abr/stream    — SSE: rata-rata ABR + statistik, tiap 2 s
+ *
+ * Jika backend offline, mode simulasi bisa dinyalakan manual (bentuk data
+ * sama dengan backend: µV, 16 kHz, epoch 60 ms dengan 10 ms pre-stimulus).
  */
 import { useState, useEffect, useRef, useCallback } from "react";
+import { api, backendUrl, type ABRResult, type RawResult } from "@/lib/api";
+import { detectWaves } from "@/lib/abr";
 
-// ─── Constants (sama dengan firmware ADS1115) ─────────────────────────────
-export const FS          = 860;       // ADS1115 @ 860 SPS
-export const EPOCH_MS    = 50;        // epoch window
-const EPOCH_SAMPLES      = Math.round(FS * EPOCH_MS / 1000); // 43
-const WAVE_WIN_MS        = 500;
-const WAVE_SAMPLES       = Math.round(FS * WAVE_WIN_MS / 1000); // 430
-const STIM_INTERVAL_MS   = 91;        // ~11 klik/dtk (firmware: STIM_INTERVAL_MS)
-const BACKEND_URL        = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:8080";
-const HEALTH_INTERVAL_MS = 5000;
+export type ConnectionStatus = "connecting" | "live" | "offline" | "simulation";
 
-// ─── Types ────────────────────────────────────────────────────────────────
-export type ConnectionStatus = "connecting" | "live" | "simulation";
-
-export interface WaveInfo {
-  name:       string;
-  latency_ms: number;
-  amplitude:  number;
+export interface RawView {
+  ch1:      Float64Array;
+  ch2:      Float64Array;
+  stim:     Uint8Array;
+  fs:       number;
+  windowMs: number;
 }
 
-export interface ABRAnalysis {
-  waves:        WaveInfo[];
-  interpeak_ms: Record<string, number>;
-  verdict:      string;
-}
-
-export interface ABRResult {
-  trial_count:   number;
-  abr_average:   number[][];
-  sampling_rate: number;
-  epoch_ms:      number;
-  quality:       string;
-  snr:           number[];
-  analysis?:     ABRAnalysis;
-}
-
-export interface FrameLogEntry {
-  idx:  number;
-  ts:   number;
-  mv:   number;
-  raw:  number;
-  stim: boolean;
+/** Satu paket SSE raw (bukan frame WebSocket individual). */
+export interface PacketLogEntry {
+  seq:     number;
+  at:      number;   // Date.now()
+  samples: number;
+  stims:   number;
+  ch1:     number;   // sampel terakhir, µV
+  ch2:     number;
 }
 
 export interface UseABRStreamReturn {
-  status:        ConnectionStatus;
-  devices:       string[];
-  rawWave:       Float64Array;
-  rawStim:       Uint8Array;
-  abrResult:     ABRResult;
-  stimCount:     number;
-  frameCount:    number;
-  currentMv:     number;
-  currentRaw:    number;
-  recentFrames:  FrameLogEntry[];
-  paused:        boolean;
-  setPaused:     (v: boolean) => void;
-  resetABR:      () => void;
+  status:      ConnectionStatus;
+  abrResult:   ABRResult;
+  prevResult:  ABRResult | null;   // snapshot sebelumnya (ghost trace)
+  raw:         RawView;
+  packets:     PacketLogEntry[];
+  lastPacketAt: number | null;
+  paused:      boolean;
+  setPaused:   (v: boolean) => void;
+  simulation:  boolean;
+  setSimulation: (v: boolean) => void;
+  /** Kosongkan tampilan lokal (dipanggil setelah POST /reset berhasil). */
+  clearLocal:  () => void;
 }
 
-// ─── Default ABR result ───────────────────────────────────────────────────
-function makeDefaultABR(): ABRResult {
+const HEALTH_INTERVAL_MS = 5000;
+const MAX_PACKETS        = 60;
+
+// ─── Default ──────────────────────────────────────────────────────────────
+const FS        = 16000;
+const EPOCH_MS  = 60;
+const PRE_MS    = 10;
+const PRE_N     = (FS * PRE_MS) / 1000;               // 160
+const POST_N    = (FS * (EPOCH_MS - PRE_MS)) / 1000;  // 800
+const EPOCH_N   = PRE_N + POST_N;                     // 960
+
+function emptyResult(): ABRResult {
   return {
     trial_count:   0,
-    abr_average:   Array.from({ length: 8 }, () => new Array(EPOCH_SAMPLES).fill(0)),
+    abr_average:   [new Array(EPOCH_N).fill(0), new Array(EPOCH_N).fill(0)],
     sampling_rate: FS,
     epoch_ms:      EPOCH_MS,
+    pre_stim_ms:   PRE_MS,
+    stim_count:    0,
+    frame_count:   0,
     quality:       "Noise",
-    snr:           new Array(8).fill(0),
+    status:        "Noise",
+    snr:           [0, 0],
+    pearson_r:     0,
+  };
+}
+
+function emptyRaw(): RawView {
+  return { ch1: new Float64Array(0), ch2: new Float64Array(0), stim: new Uint8Array(0), fs: FS, windowMs: 500 };
+}
+
+function rawFromPacket(p: RawResult): RawView {
+  return {
+    ch1:      Float64Array.from(p.samples?.[0] ?? []),
+    ch2:      Float64Array.from(p.samples?.[1] ?? []),
+    stim:     Uint8Array.from((p.stim ?? []).map(s => (s ? 1 : 0))),
+    fs:       p.sampling_rate || FS,
+    windowMs: p.window_ms || 500,
   };
 }
 
 // ─── Simulation engine ────────────────────────────────────────────────────
+// Meniru pipeline backend: ring buffer → epoch [-10, +50] ms per stimulus →
+// baseline correction → running average → SNR(post/pre) → status.
+const SIM_RING      = FS * 2;
+const SIM_ISI       = Math.round(0.091 * FS);   // 91 ms, sama dengan firmware
+const SIM_WAVES     = [[1.6, 0.30], [3.7, 0.25], [5.6, 0.50]] as const; // ms, µV
+const SIM_NOISE_UV  = 4;
+const SIM_MAINS_UV  = 1.5;
+
 interface SimState {
-  noise:      number;
-  t:          number;
-  lastStim:   number;
-  simMs:      number;
-  lastStimMs: number;
-  stimCount:  number;
-  trialCount: number;
-  abrAvg:     Float64Array;
-  epochBuf:   number[];
-  inEpoch:    boolean;
-  waveBuf:    Float64Array;
-  waveStim:   Uint8Array;
-  waveHead:   number;
-  frameCount: number;
+  ring1:   Float64Array;
+  ring2:   Float64Array;
+  ringS:   Uint8Array;
+  n:       number;        // total sampel dibangkitkan
+  nextStim: number;
+  pending: number[];
+  avg1:    Float64Array;
+  avg2:    Float64Array;
+  trials:  number;
+  stims:   number;
+  pearson: number;
+  carry:   number;        // sisa sampel pecahan antar frame
 }
 
 function initSim(): SimState {
   return {
-    noise: 0, t: 0, lastStim: -9999,
-    simMs: 0, lastStimMs: 0,
-    stimCount: 0, trialCount: 0,
-    abrAvg:    new Float64Array(EPOCH_SAMPLES),
-    epochBuf:  [],
-    inEpoch:   false,
-    waveBuf:   new Float64Array(WAVE_SAMPLES),
-    waveStim:  new Uint8Array(WAVE_SAMPLES),
-    waveHead:  0,
-    frameCount: 0,
+    ring1: new Float64Array(SIM_RING), ring2: new Float64Array(SIM_RING), ringS: new Uint8Array(SIM_RING),
+    n: 0, nextStim: PRE_N + 10, pending: [],
+    avg1: new Float64Array(EPOCH_N), avg2: new Float64Array(EPOCH_N),
+    trials: 0, stims: 0, pearson: 0, carry: 0,
   };
 }
 
-const ABR_WAVES = [
-  { d: 4,  a: 0.18, w: 1.8 },  // Wave I
-  { d: 12, a: 0.12, w: 2.5 },  // Wave III
-  { d: 20, a: 0.28, w: 3.5 },  // Wave V
-  { d: 28, a: 0.08, w: 2.5 },  // Wave VI
-];
+function gauss(): number {
+  // Box–Muller
+  return Math.sqrt(-2 * Math.log(Math.random() || 1e-12)) * Math.cos(2 * Math.PI * Math.random());
+}
 
-function simGenSample(s: SimState, isStim: boolean): number {
-  s.noise += (Math.random() - 0.5) * 0.035;
-  s.noise *= 0.988;
-  const plf   = Math.sin(2 * Math.PI * 50 * s.t / FS) * 0.012;
-  const alpha  = Math.sin(2 * Math.PI * 10 * s.t / FS) * 0.06
-                * Math.max(0, Math.sin(2 * Math.PI * 0.4 * s.t / FS));
-  if (isStim) s.lastStim = s.t;
-  const age = s.t - s.lastStim;
-  const pol = s.stimCount % 2 === 0 ? 1 : -1;
-  let abr = 0;
-  if (age >= 0 && age < 60) {
-    for (const w of ABR_WAVES) {
-      const dt = age - w.d;
-      abr += pol * w.a * Math.exp(-dt * dt / (2 * w.w * w.w));
-    }
+function abrTemplate(tMs: number): number {
+  let v = 0;
+  for (const [lat, amp] of SIM_WAVES) v += amp * Math.exp(-0.5 * ((tMs - lat) / 0.25) ** 2);
+  return v;
+}
+
+function pearson(a: Float64Array, b: Float64Array): number {
+  const n = a.length;
+  let ma = 0, mb = 0;
+  for (let i = 0; i < n; i++) { ma += a[i]; mb += b[i]; }
+  ma /= n; mb /= n;
+  let num = 0, da = 0, db = 0;
+  for (let i = 0; i < n; i++) {
+    const x = a[i] - ma, y = b[i] - mb;
+    num += x * y; da += x * x; db += y * y;
   }
-  s.t++;
-  return (s.noise + plf + alpha + abr) * (4096 / 32768) * 1000; // mV
+  return da > 0 && db > 0 ? num / Math.sqrt(da * db) : 0;
+}
+
+function snrDb(avg: Float64Array): number {
+  let pre = 0, post = 0;
+  for (let i = 0; i < PRE_N; i++) pre += avg[i] ** 2;
+  for (let i = PRE_N; i < EPOCH_N; i++) post += avg[i] ** 2;
+  const rPre = Math.sqrt(pre / PRE_N), rPost = Math.sqrt(post / POST_N);
+  return 20 * Math.log10((rPost + 1e-9) / (rPre + 1e-9));
 }
 
 function simTick(s: SimState, dtMs: number): void {
-  const n = Math.round(FS / 1000 * dtMs);
-  for (let i = 0; i < n; i++) {
-    s.simMs += 1000 / FS;
-    const isStim = (s.simMs - s.lastStimMs) >= STIM_INTERVAL_MS;
+  const want = (FS * Math.min(dtMs, 250)) / 1000 + s.carry;
+  const count = Math.floor(want);
+  s.carry = want - count;
+  for (let k = 0; k < count; k++) {
+    const i = s.n;
+    const isStim = i === s.nextStim;
     if (isStim) {
-      s.lastStimMs = s.simMs;
-      s.stimCount++;
-      s.inEpoch = true;
-      s.epochBuf = [];
+      s.nextStim += SIM_ISI;
+      s.stims++;
+      s.pending.push(i);
     }
-    const mv = simGenSample(s, isStim);
-    s.waveBuf[s.waveHead] = mv;
-    s.waveStim[s.waveHead] = isStim ? 1 : 0;
-    s.waveHead = (s.waveHead + 1) % WAVE_SAMPLES;
-    if (s.inEpoch) {
-      s.epochBuf.push(mv);
-      if (s.epochBuf.length >= EPOCH_SAMPLES) {
-        s.inEpoch = false;
-        s.trialCount++;
-        const n = s.trialCount;
-        for (let j = 0; j < EPOCH_SAMPLES; j++) {
-          s.abrAvg[j] = (s.abrAvg[j] * (n - 1) + s.epochBuf[j]) / n;
-        }
+    // Sampel ke-i berisi respons dari stimulus terakhir (jika masih dalam 50 ms).
+    const lastStim = s.nextStim - SIM_ISI;
+    const age = ((i - lastStim) / FS) * 1000;
+    const resp = lastStim >= 0 && age >= 0 && age < 50 ? abrTemplate(age) : 0;
+    const t = i / FS;
+    const mains = SIM_MAINS_UV * Math.sin(2 * Math.PI * 50 * t);
+    const idx = i % SIM_RING;
+    s.ring1[idx] = SIM_NOISE_UV * gauss() + mains + resp;
+    s.ring2[idx] = SIM_NOISE_UV * gauss() + mains + 0.4 * resp;
+    s.ringS[idx] = isStim ? 1 : 0;
+    s.n++;
+
+    // Epoch lengkap → update rata-rata
+    if (s.pending.length && s.n - s.pending[0] >= POST_N) {
+      const st = s.pending.shift()!;
+      const start = st - PRE_N;
+      if (start < 0) continue;
+      const e1 = new Float64Array(EPOCH_N), e2 = new Float64Array(EPOCH_N);
+      let b1 = 0, b2 = 0;
+      const baseN = FS / 1000;
+      for (let j = 0; j < EPOCH_N; j++) {
+        const r = (start + j) % SIM_RING;
+        e1[j] = s.ring1[r]; e2[j] = s.ring2[r];
+        if (j < baseN) { b1 += e1[j]; b2 += e2[j]; }
       }
+      b1 /= baseN; b2 /= baseN;
+      const prev = s.avg1.slice();
+      s.trials++;
+      const n = s.trials;
+      for (let j = 0; j < EPOCH_N; j++) {
+        s.avg1[j] = ((n - 1) * s.avg1[j] + (e1[j] - b1)) / n;
+        s.avg2[j] = ((n - 1) * s.avg2[j] + (e2[j] - b2)) / n;
+      }
+      s.pearson = n > 1 ? pearson(prev, s.avg1) : 0;
     }
-    s.frameCount++;
   }
+}
+
+function simResult(s: SimState): ABRResult {
+  const status = s.trials < 100 ? "Noise" : s.trials >= 500 && s.pearson >= 0.9 ? "Konvergen" : "Terbentuk";
+  const avg1 = Array.from(s.avg1), avg2 = Array.from(s.avg2);
+  const snr = [Math.round(snrDb(s.avg1) * 10) / 10, Math.round(snrDb(s.avg2) * 10) / 10];
+  const analysis = s.trials ? detectWaves(avg1, FS, PRE_MS) : { waves: [], interpeak_ms: {} };
+  const verdict = status === "Konvergen" && snr[0] >= 3 && (analysis.waves?.length ?? 0) >= 3 ? "Pass" : "Refer";
+  return {
+    trial_count: s.trials, abr_average: [avg1, avg2], sampling_rate: FS, epoch_ms: EPOCH_MS,
+    pre_stim_ms: PRE_MS, stim_count: s.stims, frame_count: s.n,
+    quality: status, status, snr, pearson_r: s.pearson,
+    analysis: { ...analysis, verdict },
+  };
+}
+
+function simRaw(s: SimState, windowMs = 500): RawView {
+  const n = Math.min(s.n, Math.round((FS * windowMs) / 1000));
+  const ch1 = new Float64Array(n), ch2 = new Float64Array(n), stim = new Uint8Array(n);
+  for (let k = 0; k < n; k++) {
+    const r = (s.n - n + k) % SIM_RING;
+    ch1[k] = s.ring1[r]; ch2[k] = s.ring2[r]; stim[k] = s.ringS[r];
+  }
+  return { ch1, ch2, stim, fs: FS, windowMs };
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────
 export function useABRStream(): UseABRStreamReturn {
-  const [status,       setStatus]       = useState<ConnectionStatus>("connecting");
-  const [devices,      setDevices]      = useState<string[]>([]);
-  const [abrResult,    setAbrResult]    = useState<ABRResult>(makeDefaultABR());
-  const [stimCount,    setStimCount]    = useState(0);
-  const [frameCount,   setFrameCount]   = useState(0);
-  const [currentMv,    setCurrentMv]    = useState(0);
-  const [currentRaw,   setCurrentRaw]   = useState(0);
-  const [recentFrames, setRecentFrames] = useState<FrameLogEntry[]>([]);
-  const [paused,       setPaused]       = useState(false);
-  const pausedRef = useRef(false);
+  const [status,       setStatus]     = useState<ConnectionStatus>("connecting");
+  const [abrResult,    setAbrResult]  = useState<ABRResult>(emptyResult);
+  const [prevResult,   setPrevResult] = useState<ABRResult | null>(null);
+  const [raw,          setRaw]        = useState<RawView>(emptyRaw);
+  const [packets,      setPackets]    = useState<PacketLogEntry[]>([]);
+  const [lastPacketAt, setLastPacketAt] = useState<number | null>(null);
+  const [paused,       setPausedState] = useState(false);
+  const [simulation,   setSimulationState] = useState(false);
 
-  const frameLogRef = useRef<FrameLogEntry[]>([]);
-  const MAX_LOG = 80;
+  const statusRef  = useRef<ConnectionStatus>("connecting");
+  const pausedRef  = useRef(false);
+  const simRef     = useRef<SimState | null>(null);
+  const seqRef     = useRef(0);
+  const rawSseRef  = useRef<EventSource | null>(null);
+  const abrSseRef  = useRef<EventSource | null>(null);
+  const lastAbrRef = useRef<ABRResult | null>(null);
 
-  function handleSetPaused(v: boolean) {
-    pausedRef.current = v;
-    setPaused(v);
-  }
+  const changeStatus = useCallback((s: ConnectionStatus) => {
+    statusRef.current = s;
+    setStatus(s);
+  }, []);
 
-  function resetABR() {
-    // Reset backend state
-    fetch(`${BACKEND_URL}/api/v1/reset`, { method: "POST" }).catch(() => {});
+  const applyResult = useCallback((r: ABRResult) => {
+    const last = lastAbrRef.current;
+    if (last && last.trial_count !== r.trial_count && last.trial_count > 0) setPrevResult(last);
+    if (r.trial_count === 0) setPrevResult(null);
+    lastAbrRef.current = r;
+    setAbrResult(r);
+  }, []);
 
-    // Reset local sim state
-    const s = simRef.current;
-    s.trialCount = 0;
-    s.stimCount  = 0;
-    s.frameCount = 0;
-    s.abrAvg     = new Float64Array(EPOCH_SAMPLES);
-    s.epochBuf   = [];
-    s.inEpoch    = false;
-    s.waveBuf.fill(0);
-    s.waveStim.fill(0);
-    s.waveHead = 0;
-    rawWaveRef.current = new Float64Array(WAVE_SAMPLES);
-    rawStimRef.current = new Uint8Array(WAVE_SAMPLES);
-    frameLogRef.current = [];
-    setRecentFrames([]);
-    setAbrResult(makeDefaultABR());
-    setStimCount(0);
-    setFrameCount(0);
-  }
-
-  function pushFrameLog(entry: FrameLogEntry) {
-    const next = [...frameLogRef.current, entry];
-    if (next.length > MAX_LOG) next.splice(0, next.length - MAX_LOG);
-    frameLogRef.current = next;
-  }
-
-  // Ring buffers — kept in refs (no re-render on every sample)
-  const rawWaveRef  = useRef(new Float64Array(WAVE_SAMPLES));
-  const rawStimRef  = useRef(new Uint8Array(WAVE_SAMPLES));
-  const [, forceRedraw] = useState(0);
-
-  const simRef      = useRef<SimState>(initSim());
-  const rafRef      = useRef<number>(0);
-  const lastTickRef = useRef(performance.now());
-
-  // ── Backend health check ────────────────────────────────────────────────
-  const rawSseRef = useRef<EventSource | null>(null);
-  const abrSseRef = useRef<EventSource | null>(null);
+  const pushPacket = useCallback((v: RawView) => {
+    const n = v.ch1.length;
+    let stims = 0;
+    for (let i = 0; i < v.stim.length; i++) stims += v.stim[i];
+    const entry: PacketLogEntry = {
+      seq: ++seqRef.current, at: Date.now(), samples: n, stims,
+      ch1: n ? v.ch1[n - 1] : 0, ch2: v.ch2.length ? v.ch2[v.ch2.length - 1] : 0,
+    };
+    setPackets(prev => {
+      const next = prev.length >= MAX_PACKETS ? prev.slice(prev.length - MAX_PACKETS + 1) : prev.slice();
+      next.push(entry);
+      return next;
+    });
+    setLastPacketAt(entry.at);
+  }, []);
 
   const stopSSE = useCallback(() => {
     rawSseRef.current?.close(); rawSseRef.current = null;
@@ -244,184 +285,117 @@ export function useABRStream(): UseABRStreamReturn {
 
   const startSSE = useCallback(() => {
     stopSSE();
+    const base = backendUrl();
 
-    // Raw stream
-    const rawSse = new EventSource(`${BACKEND_URL}/api/v1/raw/stream`);
+    const rawSse = new EventSource(`${base}/api/v1/raw/stream`);
     rawSse.onmessage = (e) => {
+      if (pausedRef.current) return;
       try {
-        const data = JSON.parse(e.data) as { samples: number[][]; sampling_rate: number };
-        if (!data.samples?.[0]?.length) return;
-        const arr       = data.samples[0];
-        const stimArr   = (data as { samples: number[][], stim?: boolean[], sampling_rate: number }).stim ?? [];
-        const startFrom = Math.max(0, arr.length - WAVE_SAMPLES);
-        const newBuf    = new Float64Array(WAVE_SAMPLES);
-        const newStim   = new Uint8Array(WAVE_SAMPLES);
-        for (let i = startFrom; i < arr.length; i++) {
-          const j = i - startFrom;
-          newBuf[j]  = arr[i];
-          newStim[j] = stimArr[i] ? 1 : 0;
-        }
-        rawWaveRef.current = newBuf;
-        rawStimRef.current = newStim;
-        if (arr.length > 0) {
-          const lastVal = arr[arr.length - 1];
-          const lastStim = stimArr.length > 0 ? stimArr[stimArr.length - 1] : false;
-          setCurrentMv(lastVal);
-          setCurrentRaw(arr.length);
-          pushFrameLog({ idx: frameLogRef.current.length + 1, ts: Date.now(), mv: lastVal, raw: arr.length, stim: lastStim });
-          setRecentFrames([...frameLogRef.current]);
-        }
-        forceRedraw(v => v + 1);
+        const v = rawFromPacket(JSON.parse(e.data) as RawResult);
+        setRaw(v);
+        pushPacket(v);
       } catch {}
     };
-    rawSse.onerror = () => {
-      setStatus("simulation");
-      stopSSE();
-    };
-    rawSseRef.current = rawSse;
-
-    // ABR stream
-    const abrSse = new EventSource(`${BACKEND_URL}/api/v1/abr/stream`);
+    const abrSse = new EventSource(`${base}/api/v1/abr/stream`);
     abrSse.onmessage = (e) => {
-      try {
-        const data = JSON.parse(e.data) as ABRResult;
-        setAbrResult(data);
-        setStimCount(prev => prev + 1); // approximate
-      } catch {}
+      if (pausedRef.current) return;
+      try { applyResult(JSON.parse(e.data) as ABRResult); } catch {}
     };
-    abrSse.onerror = () => {
-      setStatus("simulation");
-      stopSSE();
+    // EventSource mencoba reconnect sendiri; kalau backend benar-benar mati,
+    // health check yang menurunkan status ke offline.
+    const onError = () => {
+      if (rawSse.readyState === EventSource.CLOSED || abrSse.readyState === EventSource.CLOSED) {
+        stopSSE();
+        if (statusRef.current === "live") changeStatus("offline");
+      }
     };
+    rawSse.onerror = onError;
+    abrSse.onerror = onError;
+    rawSseRef.current = rawSse;
     abrSseRef.current = abrSse;
-  }, [stopSSE]);
+
+    // Hasil terakhir langsung, tanpa menunggu tick SSE 2 s
+    api.abrResult().then(applyResult).catch(() => {});
+  }, [stopSSE, pushPacket, applyResult, changeStatus]);
 
   // ── Health polling ────────────────────────────────────────────────────
   useEffect(() => {
+    if (simulation) return;
     let mounted = true;
-
-    const checkHealth = async () => {
-      if (!mounted) return;
+    const check = async () => {
       try {
-        const r = await fetch(`${BACKEND_URL}/api/v1/health`, {
-          signal: AbortSignal.timeout(3000),
-        });
-        if (!r.ok) throw new Error("not ok");
+        await api.health();
         if (!mounted) return;
-
-        // Backend is up
-        if (status !== "live") {
-          setStatus("live");
+        if (statusRef.current !== "live" || !rawSseRef.current) {
+          changeStatus("live");
           startSSE();
-          // fetch devices
-          fetch(`${BACKEND_URL}/api/v1/devices`)
-            .then(r => r.json())
-            .then((d: { devices: string[] }) => mounted && setDevices(d.devices))
-            .catch(() => {});
         }
       } catch {
         if (!mounted) return;
-        if (status === "live") {
-          setStatus("simulation");
-          stopSSE();
-        } else {
-          setStatus("simulation");
+        stopSSE();
+        changeStatus("offline");
+      }
+    };
+    check();
+    const id = setInterval(check, HEALTH_INTERVAL_MS);
+    return () => { mounted = false; clearInterval(id); stopSSE(); };
+  }, [simulation, startSSE, stopSSE, changeStatus]);
+
+  // ── Simulation loop ───────────────────────────────────────────────────
+  useEffect(() => {
+    if (!simulation) return;
+    simRef.current ??= initSim();
+    let raf = 0;
+    let last = performance.now();
+    let lastEmit = 0;
+    const loop = (now: number) => {
+      const dt = now - last;
+      last = now;
+      if (!pausedRef.current && simRef.current) {
+        simTick(simRef.current, dt);
+        if (now - lastEmit >= 200) {
+          lastEmit = now;
+          const v = simRaw(simRef.current);
+          setRaw(v);
+          pushPacket(v);
+          applyResult(simResult(simRef.current));
         }
       }
+      raf = requestAnimationFrame(loop);
     };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [simulation, pushPacket, applyResult]);
 
-    checkHealth();
-    const id = setInterval(checkHealth, HEALTH_INTERVAL_MS);
-    return () => { mounted = false; clearInterval(id); stopSSE(); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  const clearLocal = useCallback(() => {
+    if (simRef.current) simRef.current = initSim();
+    lastAbrRef.current = null;
+    setPrevResult(null);
+    setAbrResult(emptyResult());
+    setRaw(emptyRaw());
+    setPackets([]);
+    seqRef.current = 0;
   }, []);
 
-  // ── Simulation RAF loop ────────────────────────────────────────────────
-  useEffect(() => {
-    const loop = () => {
-      if (status !== "simulation" || pausedRef.current) {
-        lastTickRef.current = performance.now();
-        rafRef.current = requestAnimationFrame(loop);
-        return;
-      }
-      const now = performance.now();
-      const dt  = now - lastTickRef.current;
-      lastTickRef.current = now;
-      const s   = simRef.current;
-      simTick(s, dt);
+  const setPaused = useCallback((v: boolean) => {
+    pausedRef.current = v;
+    setPausedState(v);
+  }, []);
 
-      // Copy sim buffers to shared refs, reordered from waveHead so index 0 = oldest
-      const reordered     = new Float64Array(WAVE_SAMPLES);
-      const reorderedStim = new Uint8Array(WAVE_SAMPLES);
-      for (let i = 0; i < WAVE_SAMPLES; i++) {
-        const src = (s.waveHead + i) % WAVE_SAMPLES;
-        reordered[i]     = s.waveBuf[src];
-        reorderedStim[i] = s.waveStim[src];
-      }
-      rawWaveRef.current  = reordered;
-      rawStimRef.current  = reorderedStim;
-
-      // Build ABR result from sim
-      const abrAvgCh0 = Array.from(s.abrAvg);
-      let sigPeak = 0;
-      for (let i = 3; i < Math.min(28, EPOCH_SAMPLES); i++) {
-        sigPeak = Math.max(sigPeak, Math.abs(s.abrAvg[i]));
-      }
-      let noiseSum = 0;
-      for (let i = 0; i < 3 && i < EPOCH_SAMPLES; i++) noiseSum += s.abrAvg[i] ** 2;
-      const noiseRMS = Math.sqrt(noiseSum / 3);
-      const snr = noiseRMS > 1e-10 ? 20 * Math.log10(sigPeak / noiseRMS) : -20;
-      const quality = s.trialCount >= 500 ? "Konvergen"
-                    : s.trialCount >= 100 ? "Mulai Terbentuk"
-                    : "Noise";
-
-      // Push throttled frame log entries (1 per ~29 frames + every stim)
-      const lastIdx = (s.waveHead - 1 + WAVE_SAMPLES) % WAVE_SAMPLES;
-      const lastStim = s.waveStim[lastIdx] === 1;
-      const logEvery = Math.max(1, Math.round(FS / 30));
-      if (s.frameCount % logEvery === 0 || lastStim) {
-        const mv  = s.waveBuf[lastIdx];
-        const raw = Math.round(mv / 0.125);
-        pushFrameLog({ idx: s.frameCount, ts: s.frameCount, mv, raw, stim: lastStim });
-      }
-
-      if (s.frameCount % 30 === 0) { // update state ~30fps
-        setAbrResult({
-          trial_count:   s.trialCount,
-          abr_average:   [abrAvgCh0, ...Array.from({ length: 7 }, () => new Array(EPOCH_SAMPLES).fill(0))],
-          sampling_rate: FS,
-          epoch_ms:      EPOCH_MS,
-          quality,
-          snr:           [Math.round(snr * 10) / 10, ...new Array(7).fill(0)],
-        });
-        setStimCount(s.stimCount);
-        setFrameCount(s.frameCount);
-        setCurrentMv(s.waveBuf[lastIdx]);
-        setCurrentRaw(Math.round(s.waveBuf[lastIdx] / 0.125));
-        setRecentFrames([...frameLogRef.current]);
-        forceRedraw(v => v + 1);
-      }
-
-      rafRef.current = requestAnimationFrame(loop);
-    };
-
-    rafRef.current = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(rafRef.current);
-  }, [status]);
+  const setSimulation = useCallback((v: boolean) => {
+    stopSSE();
+    simRef.current = v ? initSim() : null;
+    lastAbrRef.current = null;
+    setPrevResult(null);
+    setAbrResult(emptyResult());
+    setRaw(emptyRaw());
+    setPackets([]);
+    setSimulationState(v);
+    changeStatus(v ? "simulation" : "connecting");
+  }, [stopSSE, changeStatus]);
 
   return {
-    status,
-    devices,
-    rawWave:      rawWaveRef.current,
-    rawStim:      rawStimRef.current,
-    abrResult,
-    stimCount,
-    frameCount,
-    currentMv,
-    currentRaw,
-    recentFrames,
-    paused,
-    setPaused:    handleSetPaused,
-    resetABR,
+    status, abrResult, prevResult, raw, packets, lastPacketAt,
+    paused, setPaused, simulation, setSimulation, clearLocal,
   };
 }

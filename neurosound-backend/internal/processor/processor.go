@@ -15,6 +15,7 @@ import (
 const (
 	Fs           = 16000
 	EpochMs      = 60.0
+	PreStimMs    = 10.0
 	preSamples   = 160
 	postSamples  = 800
 	epochSamples = preSamples + postSamples
@@ -32,6 +33,9 @@ type Result struct {
 	ABRAverage   [][]float64     `json:"abr_average"`
 	SamplingRate int             `json:"sampling_rate"`
 	EpochMs      float64         `json:"epoch_ms"`
+	PreStimMs    float64         `json:"pre_stim_ms"`
+	StimCount    int             `json:"stim_count"`
+	FrameCount   int64           `json:"frame_count"`
 	Quality      string          `json:"quality"`
 	Status       string          `json:"status"`
 	SNR          []float64       `json:"snr"`
@@ -55,6 +59,8 @@ type Processor struct {
 	avgCh1       []float64
 	avgCh2       []float64
 	trials       int
+	stims        int
+	frames       int64
 	snr          []float64
 	pearson      float64
 	status       string
@@ -95,7 +101,9 @@ func (p *Processor) AddFrame(rawCh1, rawCh2 int32, ts int64, stim bool) (*Result
 	})
 
 	p.mu.Lock()
+	p.frames++
 	if stim {
+		p.stims++
 		p.pendingStims = append(p.pendingStims, frame.Seq)
 	}
 	p.lastRaw = p.rawResultLocked(200)
@@ -178,6 +186,8 @@ func (p *Processor) Reset() {
 	p.avgCh1 = make([]float64, epochSamples)
 	p.avgCh2 = make([]float64, epochSamples)
 	p.trials = 0
+	p.stims = 0
+	p.frames = 0
 	p.snr = []float64{0, 0}
 	p.pearson = 0
 	p.status = "Noise"
@@ -195,6 +205,7 @@ func (p *Processor) SessionDocument(filename string) session.Document {
 		TrialCount:   result.TrialCount,
 		SamplingRate: result.SamplingRate,
 		EpochMs:      result.EpochMs,
+		PreStimMs:    result.PreStimMs,
 		ABRAverage:   result.ABRAverage,
 		ABRSnapshots: append([]session.Snapshot(nil), p.snapshots...),
 		SNR:          result.SNR,
@@ -207,12 +218,16 @@ func (p *Processor) SessionDocument(filename string) session.Document {
 
 func (p *Processor) resultLocked() Result {
 	avg := p.copyAvgLocked()
-	detail := analysis.Compute(p.avgCh1, p.cfg.Fs, p.snr[0], p.status)
+	// Epoch dimulai PreStimMs sebelum stimulus; latensi gelombang dihitung dari onset.
+	detail := analysis.Compute(p.avgCh1[preSamples:], p.cfg.Fs, p.snr[0], p.status)
 	return Result{
 		TrialCount:   p.trials,
 		ABRAverage:   avg,
 		SamplingRate: p.cfg.Fs,
 		EpochMs:      EpochMs,
+		PreStimMs:    PreStimMs,
+		StimCount:    p.stims,
+		FrameCount:   p.frames,
 		Quality:      p.status,
 		Status:       p.status,
 		SNR:          append([]float64(nil), p.snr...),

@@ -37,7 +37,7 @@ export default function Sidebar() {
 
       <aside
         className={`
-          fixed left-0 top-0 h-full w-64 flex flex-col bg-primary text-white border-r border-white/5 z-50
+          sidebar fixed left-0 top-0 h-full w-64 flex flex-col bg-sidebar text-white print:hidden border-r border-white/5 z-50
           transition-transform duration-300
           ${open ? "translate-x-0" : "-translate-x-full"}
           lg:translate-x-0
@@ -47,7 +47,7 @@ export default function Sidebar() {
         <div className="px-6 py-6 mb-2 flex items-start justify-between">
           <div>
             <h1 className="text-lg font-bold text-[#cde5ff] tracking-tight">Neurosound</h1>
-            <p className="text-xs text-white/50 mt-0.5">Clinical Portal</p>
+            <p className="text-xs text-white/50 mt-0.5">ABR screening · C-251</p>
           </div>
           <button
             onClick={close}
@@ -70,7 +70,7 @@ export default function Sidebar() {
                 className={`flex items-center gap-3 px-4 py-3 rounded-lg text-xs font-semibold
                   transition-all duration-100 active:scale-95
                   ${isActive
-                    ? "bg-primary-container text-[#cde5ff]"
+                    ? "bg-sidebar-active text-[#cde5ff] shadow-[inset_3px_0_0_#9dd2b5]"
                     : "text-white/60 hover:text-white hover:bg-white/5"
                   }`}
               >

@@ -62,3 +62,10 @@ func TestComputeEmptyInput(t *testing.T) {
 		t.Fatalf("empty input: %+v", d)
 	}
 }
+
+func TestComputeZeroAverageHasNoWaves(t *testing.T) {
+	d := Compute(make([]float64, 800), fs, 0, "Noise")
+	if len(d.Waves) != 0 || len(d.Interpeak) != 0 {
+		t.Fatalf("average nol tidak boleh menghasilkan gelombang: %+v", d)
+	}
+}

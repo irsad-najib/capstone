@@ -68,6 +68,10 @@ func detectWaves(avg []float64, fs int) []WaveInfo {
 				bestAbs = v
 			}
 		}
+		// Average masih nol (belum ada trial): tidak ada puncak yang bisa dilaporkan.
+		if bestAbs == 0 {
+			continue
+		}
 		out = append(out, WaveInfo{
 			Name:    name,
 			Latency: round3(float64(best) / float64(fs) * 1000),
