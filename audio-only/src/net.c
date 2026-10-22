@@ -4,13 +4,18 @@
  * Urutan boot:
  *   1. Kredensial dari NVS ("wifi-cfg"), kalau kosong pakai DEFAULT_SSID
  *   2. Gagal konek dalam STA_TIMEOUT_MS → AP "ESP32-Setup" / "12345678"
- *      + DNS hijack + portal di 192.168.4.1. Simpan → restart
+ *      + DNS hijack + portal di http://4.3.2.1. Simpan → restart
  *   3. Dapat IP → buka NET_WS_URI. Reconnect WiFi & WS otomatis
  *
  * Probe captive portal: Android /generate_204, iOS /hotspot-detect.html,
  * Windows /ncsi.txt & /connecttest.txt — semua (dan URL lain) di-redirect ke /.
- * DHCP juga mengiklankan option 114 (RFC 8910), dipakai Android 11+ / Samsung
- * untuk membuka halaman login tanpa menebak lewat probe.
+ * IP AP sengaja 4.3.2.1 (bukan 192.168.4.1): Android baru menganggap jawaban
+ * DNS berupa IP privat untuk connectivitycheck.gstatic.com sebagai "tanpa
+ * internet" dan tidak pernah mengirim /generate_204. Trik yang sama dipakai WLED.
+ *
+ * Sengaja TANPA DHCP option 114 (RFC 8910): Android 16 (Samsung A35) yang
+ * mendapat URI http di option itu berhenti mengirim /generate_204 dan
+ * langsung menandai "Connected without internet".
  *
  * Scan WiFi dilakukan sekali sebelum AP aktif (atau lewat /scan): scan saat
  * ada klien membuat AP pindah channel dan HP bisa lepas.
@@ -45,6 +50,9 @@
 #define DEFAULT_PASS     ""
 #define STA_TIMEOUT_MS   15000
 #define NVS_NS           "wifi-cfg"
+#define PORTAL_IP_BYTES  4, 3, 2, 1          /* jawaban DNS */
+#define PORTAL_IP_ADDR   ESP_IP4TOADDR(4, 3, 2, 1)
+#define PORTAL_URL       "http://4.3.2.1/"
 
 
 #define BIT_GOT_IP  BIT0
@@ -239,7 +247,7 @@ static bool sta_connect(const char *ssid, const char *pass)
 }
 
 /* ------------------------------------------------------------------ */
-/*  DNS hijack: semua query A dijawab 192.168.4.1                     */
+/*  DNS hijack: semua query A dijawab IP portal (4.3.2.1)              */
 /* ------------------------------------------------------------------ */
 static void dns_task(void *arg)
 {
@@ -264,13 +272,28 @@ static void dns_task(void *arg)
         if (q > n) continue;
         bool is_a = pkt[q - 4] == 0 && pkt[q - 3] == 1;
 
+        /* Log nama yang ditanya HP (dibatasi supaya log tidak banjir). */
+        static int logged;
+        if (logged < 40) {
+            char name[96];
+            int  o = 0;
+            for (int i = 12; i < q - 5 && pkt[i] && o < (int)sizeof(name) - 2; ) {
+                int l = pkt[i++];
+                if (o) name[o++] = '.';
+                while (l-- > 0 && i < n && o < (int)sizeof(name) - 1) name[o++] = (char)pkt[i++];
+            }
+            name[o] = '\0';
+            LOG("DNS", "%s %s", is_a ? "A   " : "lain", name);
+            if (++logged == 40) LOG("DNS", "(log DNS berikutnya dimatikan)");
+        }
+
         pkt[2] = 0x81; pkt[3] = 0x80;                    /* response, no error */
         pkt[6] = 0; pkt[7] = is_a ? 1 : 0;               /* ANCOUNT */
         pkt[8] = pkt[9] = pkt[10] = pkt[11] = 0;         /* buang NS/AR (EDNS) */
         int len = q;
         if (is_a) {
             const uint8_t ans[] = { 0xC0, 0x0C, 0, 1, 0, 1, 0, 0, 0, 60, 0, 4,
-                                    192, 168, 4, 1 };
+                                    PORTAL_IP_BYTES };
             memcpy(pkt + len, ans, sizeof(ans));
             len += sizeof(ans);
         }
@@ -311,6 +334,30 @@ static void html_escape(char *out, size_t out_sz, const char *in)
     out[n] = '\0';
 }
 
+static void log_req(const char *what, httpd_req_t *req)
+{
+    char host[64] = "?", accept[48] = "-", ua[48] = "-";
+    httpd_req_get_hdr_value_str(req, "Host", host, sizeof(host));
+    httpd_req_get_hdr_value_str(req, "Accept", accept, sizeof(accept));
+    httpd_req_get_hdr_value_str(req, "User-Agent", ua, sizeof(ua));
+    LOG("HTTP", "%-6s %s%s  accept=%s  ua=%s", what, host, req->uri, accept, ua);
+}
+
+static bool wants_capport_json(httpd_req_t *req)
+{
+    char accept[64] = "";
+    httpd_req_get_hdr_value_str(req, "Accept", accept, sizeof(accept));
+    return strstr(accept, "captive+json") != NULL;
+}
+
+static esp_err_t capport_json(httpd_req_t *req)
+{
+    httpd_resp_set_type(req, "application/captive+json");
+    httpd_resp_set_hdr(req, "Cache-Control", "private");
+    return httpd_resp_sendstr(req,
+        "{\"captive\":true,\"user-portal-url\":\"" PORTAL_URL "\"}");
+}
+
 static wifi_ap_record_t recs[16];
 static uint16_t         scan_count;
 
@@ -328,6 +375,12 @@ static void wifi_scan(void)
 
 static esp_err_t portal_root(httpd_req_t *req)
 {
+    /* HP yang masih menyimpan URI option 114 lama ("/") meminta JSON di sini. */
+    if (wants_capport_json(req)) {
+        log_req("api/", req);
+        return capport_json(req);
+    }
+    log_req("page", req);
     httpd_resp_set_type(req, "text/html");
     httpd_resp_send_chunk(req, PAGE_HEAD, HTTPD_RESP_USE_STRLEN);
 
@@ -414,16 +467,18 @@ static esp_err_t portal_save(httpd_req_t *req)
 /* Semua probe OS dan URL tak dikenal → redirect ke portal. */
 static esp_err_t portal_probe(httpd_req_t *req)
 {
+    log_req("probe", req);
     httpd_resp_set_status(req, "302 Found");
-    httpd_resp_set_hdr(req, "Location", "http://192.168.4.1/");
+    httpd_resp_set_hdr(req, "Location", PORTAL_URL);
     httpd_resp_set_hdr(req, "Cache-Control", "no-store");
     httpd_resp_set_type(req, "text/html");
-    return httpd_resp_sendstr(req, "<a href='http://192.168.4.1/'>ESP32 Setup</a>");
+    return httpd_resp_sendstr(req, "<a href='" PORTAL_URL "'>ESP32 Setup</a>");
 }
 
 static esp_err_t portal_redirect(httpd_req_t *req, httpd_err_code_t err)
 {
     (void)err;
+    log_req("404", req);
     return portal_probe(req);
 }
 
@@ -435,22 +490,33 @@ static esp_err_t portal_scan(httpd_req_t *req)
     return httpd_resp_send(req, NULL, 0);
 }
 
-/* DHCP AP: DNS = 192.168.4.1 dan option 114 menunjuk ke portal. */
+/* RFC 8908: Android 11+ membaca JSON ini dari URI di DHCP option 114. */
+static esp_err_t portal_capport_api(httpd_req_t *req)
+{
+    log_req("api", req);
+    return capport_json(req);
+}
+
+/* AP pakai IP 4.3.2.1/24; DHCP membagikan DNS = IP itu supaya semua nama
+ * mendarat di dns_task. */
 static void dhcps_setup(void)
 {
-    static char uri[] = "http://192.168.4.1/";
+    esp_netif_ip_info_t ip = { 0 };
+    ip.ip.addr      = PORTAL_IP_ADDR;
+    ip.gw.addr      = PORTAL_IP_ADDR;
+    ip.netmask.addr = ESP_IP4TOADDR(255, 255, 255, 0);
+
     esp_netif_dns_info_t dns = { 0 };
     dns.ip.type             = ESP_IPADDR_TYPE_V4;
-    dns.ip.u_addr.ip4.addr  = ESP_IP4TOADDR(192, 168, 4, 1);
+    dns.ip.u_addr.ip4.addr  = PORTAL_IP_ADDR;
     uint8_t offer_dns = 1;
 
     esp_netif_dhcps_stop(ap_netif);
+    esp_err_t err = esp_netif_set_ip_info(ap_netif, &ip);
+    if (err != ESP_OK) LOG("PORTAL", "set IP AP gagal: %s", esp_err_to_name(err));
     esp_netif_set_dns_info(ap_netif, ESP_NETIF_DNS_MAIN, &dns);
     esp_netif_dhcps_option(ap_netif, ESP_NETIF_OP_SET, ESP_NETIF_DOMAIN_NAME_SERVER,
                            &offer_dns, sizeof(offer_dns));
-    esp_err_t err = esp_netif_dhcps_option(ap_netif, ESP_NETIF_OP_SET,
-                                           ESP_NETIF_CAPTIVEPORTAL_URI, uri, strlen(uri));
-    if (err != ESP_OK) LOG("PORTAL", "option 114 gagal: %s", esp_err_to_name(err));
     esp_netif_dhcps_start(ap_netif);
 }
 
@@ -486,6 +552,9 @@ static void portal_start(void)
     httpd_register_uri_handler(srv, &root);
     httpd_register_uri_handler(srv, &save);
     httpd_register_uri_handler(srv, &scan);
+    const httpd_uri_t api = { .uri = "/captive-portal/api", .method = HTTP_GET,
+                              .handler = portal_capport_api };
+    httpd_register_uri_handler(srv, &api);
 
     static const char *probes[] = {
         "/generate_204", "/gen_204",                 /* Android, Samsung */
@@ -500,7 +569,7 @@ static void portal_start(void)
     httpd_register_err_handler(srv, HTTPD_404_NOT_FOUND, portal_redirect);
 
     xTaskCreatePinnedToCore(dns_task, "dns", 3072, NULL, 3, NULL, 1);
-    LOG("PORTAL", "AP \"%s\" / \"%s\" aktif → buka http://192.168.4.1", AP_SSID, AP_PASS);
+    LOG("PORTAL", "AP \"%s\" / \"%s\" aktif → buka " PORTAL_URL, AP_SSID, AP_PASS);
 }
 
 /* ------------------------------------------------------------------ */
@@ -691,7 +760,7 @@ void net_log_flush(void)
 void net_print_status(void)
 {
     if (portal_mode) {
-        LOG("NET", "mode portal: AP \"%s\" → http://192.168.4.1", AP_SSID);
+        LOG("NET", "mode portal: AP \"%s\" → " PORTAL_URL, AP_SSID);
         return;
     }
     wifi_ap_record_t ap;
