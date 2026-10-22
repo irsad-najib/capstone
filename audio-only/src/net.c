@@ -41,8 +41,8 @@
 
 #define AP_SSID          "ESP32-Setup"
 #define AP_PASS          "12345678"
-#define DEFAULT_SSID     "irsad"      /* kosongkan ("") untuk skip */
-#define DEFAULT_PASS     "nonenone"
+#define DEFAULT_SSID     ""           /* isi untuk fallback sebelum portal */
+#define DEFAULT_PASS     ""
 #define STA_TIMEOUT_MS   15000
 #define NVS_NS           "wifi-cfg"
 
