@@ -1,0 +1,308 @@
+openapi: 3.0.3
+info:
+  title: Neurosound ABR Backend
+  version: 1.0.0
+  description: |
+    Backend Go + Python DSP untuk sistem ABR berbasis ESP32.
+
+    **Koneksi ESP32 (WebSocket):** `wss://capstone.irsad.site/ws?id=<device_id>`
+    (lokal: `ws://localhost:8080/ws?id=<device_id>`).
+
+    Frame dari ESP32 (satu objek atau array/batch):
+    ```json
+    {"ch1":12345,"ch2":-4321,"ts":1234567890,"stim":true}
+    ```
+    Format ringkas juga diterima: `{"r":12345,"t":1234567890,"s":1}`.
+
+    Pesan bertipe dari ESP32 (tidak masuk ke data ABR):
+    `{"type":"log","lines":[...]}` dan `{"type":"audio_test",...}`.
+
+    Perintah dari backend ke ESP32 dikirim lewat WebSocket yang sama:
+    `{"type":"command","cmd":"l -30"}` (lihat `/api/v1/command`).
+
+    Endpoint log & perintah butuh token kalau `LOG_TOKEN` diset: klik **Authorize**.
+servers:
+  - url: /
+tags:
+  - name: Sistem
+  - name: ESP32
+    description: Kirim perintah / parameter ke ESP32 yang terhubung
+  - name: Log
+    description: Log ESP32 (halaman live di `/logs`)
+  - name: ABR
+  - name: Sesi
+paths:
+  /api/v1/health:
+    get:
+      tags: [Sistem]
+      summary: Cek backend hidup
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              example: {status: ok, time: "2026-10-21T06:20:50Z"}
+  /api/v1/devices:
+    get:
+      tags: [ESP32]
+      summary: Daftar ESP32 terhubung + status terakhir per device
+      responses:
+        "200":
+          description: "`devices` = id yang sedang terhubung; `detail` = semua device yang pernah terlihat"
+          content:
+            application/json:
+              example:
+                devices: [esp32-audio-001]
+                detail:
+                  - id: esp32-audio-001
+                    connected: true
+                    connections: 1
+                    last_seen: "2026-10-21T13:20:50.123+07:00"
+                    audio_test: {type: audio_test, device: esp32-audio-001, seq: 12, uptime_ms: 60000, "on": true, freq: 1000, level_dbfs: -20, ch: L+R}
+                    audio_test_at: "2026-10-21T13:20:48.001+07:00"
+  /api/v1/stim/set:
+    post:
+      tags: [ESP32]
+      summary: Set level stimulus (dB)
+      description: Meneruskan `{"cmd":"set_db","value":<db>}` ke semua ESP32.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                db: {type: integer, minimum: 0, maximum: 100, example: 60}
+      responses:
+        "200":
+          description: Terkirim (`sent_to` = jumlah ESP32 yang menerima)
+          content:
+            application/json:
+              example: {ok: true, db: 60, sent_to: 1}
+  /api/v1/command:
+    post:
+      tags: [ESP32]
+      summary: Kirim perintah konsol ke ESP32
+      description: |
+        Dikirim ke ESP sebagai `{"type":"command","cmd":"<cmd>"}`.
+        Perintah ESP audio: `f <Hz>`, `l <dBFS>`, `on`, `off`, `c L/R/B`, `s`, `p`, `net`, `?`.
+        `device` kosong = kirim ke semua device.
+      security: [{logToken: []}, {logTokenQuery: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [cmd]
+              properties:
+                device: {type: string, example: esp32-audio-001}
+                cmd: {type: string, example: "l -30"}
+      responses:
+        "200":
+          description: Terkirim (`sent` = jumlah koneksi yang menerima)
+          content:
+            application/json:
+              example: {ok: true, sent: 1}
+        "400":
+          description: Body bukan JSON atau `cmd` kosong
+        "401":
+          description: Token salah (hanya jika LOG_TOKEN diset)
+        "404":
+          description: Device tidak terhubung
+          content:
+            application/json:
+              example: {ok: false, error: device tidak terhubung, device: esp32-audio-001}
+  /api/v1/broadcast:
+    get:
+      tags: [ESP32]
+      summary: Broadcast perintah ke semua ESP32 (query)
+      security: [{logToken: []}, {logTokenQuery: []}]
+      parameters:
+        - name: msg
+          in: query
+          required: true
+          schema: {type: string, example: "l -10"}
+      responses:
+        "200":
+          description: Terkirim sebagai `{"type":"command","cmd":msg}`
+          content:
+            application/json:
+              example: {ok: true, msg: "l -10", sent: 1}
+        "400":
+          description: msg kosong
+    post:
+      tags: [ESP32]
+      summary: Broadcast perintah ke semua ESP32 (JSON)
+      security: [{logToken: []}, {logTokenQuery: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                msg: {type: string, example: "off"}
+      responses:
+        "200":
+          description: Terkirim sebagai `{"type":"command","cmd":msg}`
+          content:
+            application/json:
+              example: {ok: true, msg: "off", sent: 1}
+  /api/v1/logs:
+    get:
+      tags: [Log]
+      summary: Baris log ESP32 terakhir (maks 1000 per device)
+      security: [{logToken: []}, {logTokenQuery: []}]
+      parameters:
+        - name: device
+          in: query
+          description: Kosong = semua device digabung urut waktu
+          schema: {type: string, example: esp32-audio-001}
+        - name: limit
+          in: query
+          schema: {type: integer, default: 200}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              example:
+                device: esp32-audio-001
+                lines:
+                  - {t: "2026-10-21T13:20:50.123+07:00", device: esp32-audio-001, line: "[ 12770 ms] [WS    ] terhubung"}
+  /api/v1/logs/stream:
+    get:
+      tags: [Log]
+      summary: Log live (Server-Sent Events, satu event per baris)
+      description: "Heartbeat `: ping` tiap 15 detik. Buka lewat halaman `/logs`."
+      security: [{logToken: []}, {logTokenQuery: []}]
+      parameters:
+        - name: device
+          in: query
+          schema: {type: string}
+      responses:
+        "200":
+          description: text/event-stream
+  /api/v1/abr:
+    get:
+      tags: [ABR]
+      summary: Hasil rata-rata ABR saat ini
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Result"}
+  /api/results:
+    get:
+      tags: [ABR]
+      summary: Analisis gelombang (I, III, V) saat ini
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Analysis"}
+  /api/v1/abr/stream:
+    get:
+      tags: [ABR]
+      summary: Stream ABR (Server-Sent Events, tiap 2 detik)
+      description: Buka di browser / EventSource; Swagger tidak bisa menampilkan stream.
+      responses:
+        "200":
+          description: text/event-stream
+  /api/v1/raw/stream:
+    get:
+      tags: [ABR]
+      summary: Stream sinyal mentah (Server-Sent Events, tiap 200 ms)
+      responses:
+        "200":
+          description: text/event-stream
+  /api/v1/reset:
+    post:
+      tags: [ABR]
+      summary: Reset rata-rata ABR (mulai hitung dari 0)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              example: {ok: true}
+  /api/v1/stim:
+    post:
+      tags: [ABR]
+      summary: Jumlah trial saat ini
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              example: {ok: true, trials: 1200}
+  /api/v1/abr/save:
+    post:
+      tags: [Sesi]
+      summary: Simpan hasil ABR saat ini sebagai sesi
+      responses:
+        "200":
+          description: Tersimpan
+          content:
+            application/json:
+              example: {ok: true, file: "abr_20261021_062050.json"}
+  /api/v1/sessions:
+    get:
+      tags: [Sesi]
+      summary: Daftar sesi tersimpan
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              example: {sessions: [], total: 0}
+  /api/v1/sessions/{filename}:
+    get:
+      tags: [Sesi]
+      summary: Detail satu sesi
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        "200":
+          description: OK
+        "404":
+          description: Sesi tidak ditemukan
+components:
+  securitySchemes:
+    logToken: {type: apiKey, in: header, name: X-Log-Token}
+    logTokenQuery: {type: apiKey, in: query, name: token}
+  schemas:
+    Analysis:
+      type: object
+      properties:
+        waves:
+          type: array
+          items: {type: object}
+        interpeak_ms:
+          type: object
+          additionalProperties: {type: number}
+        verdict: {type: string}
+    Result:
+      type: object
+      properties:
+        trial_count: {type: integer}
+        abr_average:
+          type: array
+          items:
+            type: array
+            items: {type: number}
+        sampling_rate: {type: integer, example: 16000}
+        epoch_ms: {type: number, example: 60}
+        quality: {type: string}
+        status: {type: string}
+        snr:
+          type: array
+          items: {type: number}
+        pearson_r: {type: number}
+        analysis: {$ref: "#/components/schemas/Analysis"}

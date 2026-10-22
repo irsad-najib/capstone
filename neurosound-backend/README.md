@@ -43,3 +43,20 @@ Send frames to `ws://localhost:8080/ws?id=esp32-abr-001`:
 - `GET /api/v1/sessions`
 - `GET /api/v1/sessions/{filename}`
 - `POST /api/v1/reset`
+
+## Testing
+
+Unit test (test processor memakai `dsp/dsp_worker.py` asli, jadi jalankan `./scripts/setup.sh` dulu):
+
+```bash
+go test ./...
+```
+
+Test end-to-end dengan data ABR sintetis (ground truth diketahui). Backend harus sudah jalan:
+
+```bash
+.venv/bin/pip install websocket-client
+.venv/bin/python tests/e2e_abr.py                 # 100 stimulus dengan ABR
+.venv/bin/python tests/e2e_abr.py --stims 600     # sampai status Konvergen
+.venv/bin/python tests/e2e_abr.py --no-response   # tanpa ABR, harus Refer
+```
