@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { OfflineBanner, OutcomeChip } from "@/components/ui";
+import { ButtonLink, Card, EmptyState, OfflineBanner, OutcomeChip } from "@/components/ui";
 import { useBackend } from "@/hooks/useBackend";
 import { api } from "@/lib/api";
 import { outcomeOf } from "@/lib/abr";
@@ -12,41 +12,38 @@ export default function RecentActivity() {
   const sessions = (data?.sessions ?? []).slice(0, 5);
 
   return (
-    <section className="bg-surface-container-lowest rounded-2xl border border-outline-variant overflow-hidden">
-      <div className="px-5 py-4 flex justify-between items-center border-b border-outline-variant/60">
-        <h2 className="text-base font-semibold text-primary">Recent sessions</h2>
-        <Link href="/records" className="text-xs font-bold text-primary flex items-center gap-1 hover:underline">
-          Full history <MdArrowForward className="text-[16px]" />
-        </Link>
-      </div>
-
+    <Card
+      title="Recent sessions"
+      flush
+      action={<ButtonLink href="/records" variant="ghost" size="sm">Full history<MdArrowForward /></ButtonLink>}
+    >
       {loading && <p className="px-5 py-10 text-center text-sm text-on-surface-variant">Loading sessions…</p>}
-      {error && <div className="p-5"><OfflineBanner message="Backend offline — no session history available." onRetry={refetch} /></div>}
+      {error && <div className="px-5 pb-5"><OfflineBanner message="Backend offline — no session history available." onRetry={refetch} /></div>}
       {!loading && !error && sessions.length === 0 && (
-        <p className="px-5 py-8 text-center text-sm text-on-surface-variant">No saved sessions yet. Run a scan and press Save session.</p>
+        <EmptyState title="No saved sessions yet">Run a scan and press Save session. It will show up here.</EmptyState>
       )}
 
       {sessions.length > 0 && (
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead>
-              <tr className="bg-surface-container-low text-[11px] font-bold uppercase tracking-widest text-on-surface-variant">
-                <th className="px-5 py-3">File</th>
-                <th className="px-5 py-3">Saved at</th>
-                <th className="px-5 py-3 text-right">Trials</th>
-                <th className="px-5 py-3">Outcome</th>
-                <th className="px-5 py-3 text-right">Actions</th>
+              <tr className="border-y border-outline-variant/50 text-xs font-medium text-on-surface-variant">
+                <th className="px-5 py-2.5 font-medium">File</th>
+                <th className="px-5 py-2.5 font-medium">Saved at</th>
+                <th className="px-5 py-2.5 font-medium text-right">Trials</th>
+                <th className="px-5 py-2.5 font-medium">Outcome</th>
+                <th className="px-5 py-2.5"><span className="sr-only">Actions</span></th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-outline-variant/60">
+            <tbody className="divide-y divide-outline-variant/50">
               {sessions.map(s => (
-                <tr key={s.filename} className="hover:bg-surface-container-low/50">
-                  <td className="px-5 py-3 font-mono text-xs font-semibold">{s.filename}</td>
+                <tr key={s.filename} className="hover:bg-surface-container-low/60">
+                  <td className="px-5 py-3 font-mono text-xs">{s.filename}</td>
                   <td className="px-5 py-3 text-on-surface-variant whitespace-nowrap">{new Date(s.saved_at).toLocaleString()}</td>
                   <td className="px-5 py-3 text-right font-mono tabular-nums">{s.trial_count.toLocaleString()}</td>
                   <td className="px-5 py-3"><OutcomeChip outcome={outcomeOf(s)} /></td>
                   <td className="px-5 py-3 text-right">
-                    <Link href={`/results?file=${encodeURIComponent(s.filename)}`} className="px-3 py-2 rounded-lg text-primary text-xs font-bold hover:bg-surface-container">View</Link>
+                    <Link href={`/results?file=${encodeURIComponent(s.filename)}`} className="text-sm font-medium text-primary hover:underline">View</Link>
                   </td>
                 </tr>
               ))}
@@ -54,6 +51,6 @@ export default function RecentActivity() {
           </table>
         </div>
       )}
-    </section>
+    </Card>
   );
 }

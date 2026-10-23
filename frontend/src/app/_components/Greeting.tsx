@@ -1,8 +1,8 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import Link from "next/link";
-import { MdPlayCircle } from "react-icons/md";
+import { MdPlayArrow } from "react-icons/md";
+import { ButtonLink } from "@/components/ui";
 
 // Tanggal hanya di klien supaya tidak beda dengan HTML hasil prerender.
 const subscribe = () => () => {};
@@ -14,16 +14,16 @@ export default function Greeting() {
   const greet = hour < 11 ? "Good morning" : hour < 15 ? "Good afternoon" : hour < 19 ? "Good evening" : "Good night";
 
   return (
-    <section className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+    <section className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pt-2">
       <div>
-        <h2 className="text-3xl md:text-4xl font-bold text-primary tracking-tight">{greet}</h2>
+        <h2 className="text-2xl md:text-[28px] md:leading-9 font-semibold tracking-tight text-on-surface">{greet}</h2>
         <p className="text-sm text-on-surface-variant mt-1">
-          {today ? new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" }) : " "}
+          {today ? new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" }) : " "}
         </p>
       </div>
-      <Link href="/scan" className="min-h-11 w-fit flex items-center gap-2 bg-secondary text-on-secondary px-5 rounded-lg text-sm font-bold hover:opacity-90">
-        <MdPlayCircle className="text-xl" />Start new scan
-      </Link>
+      <ButtonLink href="/scan" variant="secondary" className="w-fit">
+        <MdPlayArrow />Start new scan
+      </ButtonLink>
     </section>
   );
 }

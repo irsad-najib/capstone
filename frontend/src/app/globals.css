@@ -1,5 +1,25 @@
 @import "tailwindcss";
 
+/* Sidebar desktop: data-sidebar="collapsed" di <html> → hanya ikon. */
+@custom-variant collapsed {
+  &:where([data-sidebar=collapsed], [data-sidebar=collapsed] *) {
+    @slot;
+  }
+}
+
+:root {
+  --sidebar-w: 16rem;
+}
+:root[data-sidebar=collapsed] {
+  --sidebar-w: 4.5rem;
+}
+
+/* Font dari next/font (layout.tsx); fallback sistem kalau gagal dimuat. */
+@theme inline {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, "SF Mono", Menlo, monospace;
+}
+
 /*
   Custom design-system colors only.
   Everything else (spacing, font sizes, etc.) uses standard Tailwind.
@@ -128,7 +148,8 @@
 
 /* ── Base ────────────────────────────────────────────────────── */
 body {
-  font-family: Inter, sans-serif;
+  font-family: var(--font-sans);
+  font-feature-settings: "cv11", "ss01";
   -webkit-font-smoothing: antialiased;
   background-color: var(--color-surface);
   color: var(--color-on-surface);

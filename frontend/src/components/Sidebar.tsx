@@ -1,24 +1,40 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  MdClose,
-  MdGridView,
-  MdHistory,
-  MdMonitorHeart,
-  MdSensors,
-  MdSettingsApplications,
-} from "react-icons/md";
+import { MdClose } from "react-icons/md";
 import { useSidebar } from "@/contexts/SidebarContext";
+import { useBackend } from "@/hooks/useBackend";
+import { api } from "@/lib/api";
+import { NAV_ITEMS } from "@/lib/nav";
+import { StatusDot } from "@/components/ui";
 
-const navItems = [
-  { href: "/",        icon: MdGridView,     label: "Dashboard"     },
-  { href: "/scan",    icon: MdMonitorHeart, label: "Start Scan"    },
-  { href: "/records", icon: MdHistory,      label: "History"       },
-  { href: "/device",  icon: MdSensors,      label: "Device Status" },
-  { href: "/settings", icon: MdSettingsApplications, label: "Settings" },
-];
+/* Saat sidebar desktop menyempit (data-sidebar="collapsed"), teks disembunyikan
+   dan ikon ditaruh di tengah. Drawer mobile selalu tampil penuh. */
+const hideWhenCollapsed = "lg:collapsed:hidden";
+
+function ConnectionStatus() {
+  const health  = useBackend(api.health, 10_000);
+  const devices = useBackend(api.devices, 10_000);
+  const online = health.data?.status === "ok" && !health.error;
+  const ids = devices.data?.devices ?? [];
+  const backendText = health.loading ? "Checking backend…" : online ? "Backend online" : "Backend offline";
+  const deviceText = ids.length ? ids.join(", ") : "No device";
+
+  return (
+    <div className="mx-3 mb-4 rounded-xl bg-white/5 px-3 py-3 space-y-2 text-xs lg:collapsed:mx-auto lg:collapsed:px-0 lg:collapsed:w-10 lg:collapsed:flex lg:collapsed:flex-col lg:collapsed:items-center">
+      <p className="flex items-center gap-2 text-white/80" title={backendText}>
+        <StatusDot ok={health.loading ? null : online} />
+        <span className={hideWhenCollapsed}>{backendText}</span>
+      </p>
+      <p className="flex items-center gap-2 text-white/60 min-w-0" title={deviceText}>
+        <StatusDot ok={devices.loading ? null : ids.length > 0} />
+        <span className={`font-mono truncate ${hideWhenCollapsed}`}>{deviceText}</span>
+      </p>
+    </div>
+  );
+}
 
 export default function Sidebar() {
   const pathname = usePathname();
@@ -37,21 +53,23 @@ export default function Sidebar() {
 
       <aside
         className={`
-          sidebar fixed left-0 top-0 h-full w-64 flex flex-col bg-sidebar text-white print:hidden border-r border-white/5 z-50
-          transition-transform duration-300
+          sidebar fixed left-0 top-0 h-full w-64 lg:w-(--sidebar-w) flex flex-col bg-sidebar text-white print:hidden z-50 overflow-hidden
+          transition-[transform,width] duration-300 motion-reduce:transition-none
           ${open ? "translate-x-0" : "-translate-x-full"}
           lg:translate-x-0
         `}
       >
         {/* Brand + close button */}
-        <div className="px-6 py-6 mb-2 flex items-start justify-between">
-          <div>
-            <h1 className="text-lg font-bold text-[#cde5ff] tracking-tight">Neurosound</h1>
-            <p className="text-xs text-white/50 mt-0.5">ABR screening · C-251</p>
-          </div>
+        <div className="relative h-16 px-12 flex items-center justify-center lg:collapsed:px-0">
+          <Link href="/" onClick={close} className="flex items-center min-w-0" title="NeuroSound" aria-label="NeuroSound home">
+            {/* Logo versi terang: navy diganti biru muda supaya terbaca di sidebar gelap. */}
+            <Image src="/brand/neurosound-logo-light.png" alt="" width={1012} height={264} priority className={`h-9 w-auto ${hideWhenCollapsed}`} />
+            <Image src="/brand/neurosound-mark-light.png" alt="" width={512} height={512} priority className="hidden lg:collapsed:block h-10 w-10" />
+          </Link>
           <button
+            type="button"
             onClick={close}
-            className="lg:hidden p-1 rounded-full hover:bg-white/10 text-white/70 hover:text-white transition-colors"
+            className="lg:hidden absolute right-3 top-1/2 -translate-y-1/2 h-9 w-9 flex items-center justify-center rounded-lg hover:bg-white/10 text-white/70 hover:text-white transition-colors"
             aria-label="Close menu"
           >
             <MdClose className="text-xl" />
@@ -59,27 +77,32 @@ export default function Sidebar() {
         </div>
 
         {/* Nav links */}
-        <nav className="flex-1 px-4 space-y-1 overflow-y-auto hide-scrollbar">
-          {navItems.map(({ href, icon: Icon, label }) => {
+        <nav className="flex-1 px-3 pt-4 space-y-0.5 overflow-y-auto hide-scrollbar">
+          {NAV_ITEMS.map(({ href, icon: Icon, label }) => {
             const isActive = pathname === href;
             return (
               <Link
                 key={href}
                 href={href}
                 onClick={close}
-                className={`flex items-center gap-3 px-4 py-3 rounded-lg text-xs font-semibold
-                  transition-all duration-100 active:scale-95
+                title={label}
+                aria-current={isActive ? "page" : undefined}
+                className={`flex items-center gap-3 h-10 px-3 rounded-lg text-sm font-medium whitespace-nowrap transition-colors
+                  lg:collapsed:justify-center lg:collapsed:px-0
+                  focus-visible:outline-2 focus-visible:outline-primary-fixed
                   ${isActive
-                    ? "bg-sidebar-active text-[#cde5ff] shadow-[inset_3px_0_0_#9dd2b5]"
+                    ? "bg-sidebar-active text-primary-fixed shadow-[inset_3px_0_0_#9dd2b5]"
                     : "text-white/60 hover:text-white hover:bg-white/5"
                   }`}
               >
-                <Icon className="text-[20px]" />
-                {label}
+                <Icon className="text-xl shrink-0" />
+                <span className={hideWhenCollapsed}>{label}</span>
               </Link>
             );
           })}
         </nav>
+
+        <ConnectionStatus />
       </aside>
     </>
   );

@@ -15,6 +15,8 @@ export interface Settings {
   stimDb:            number;  // level stimulus default saat buka /scan
   targetTrials:      number;  // target trial (progress bar + auto-save)
   autoSave:          boolean; // simpan sesi otomatis saat target tercapai
+  testLevels:        number[]; // level dB yang dites berurutan (tinggi → rendah)
+  stopAtThreshold:   boolean; // berhenti turun level setelah tidak ada respons
   adminToken:        string;  // LOG_TOKEN backend, dipakai halaman /admin
 }
 
@@ -26,6 +28,8 @@ export const DEFAULT_SETTINGS: Settings = {
   stimDb:            80,
   targetTrials:      500,
   autoSave:          false,
+  testLevels:        [80, 60, 40],
+  stopAtThreshold:   true,
   adminToken:        "",
 };
 

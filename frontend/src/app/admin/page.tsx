@@ -1,16 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import TopBar from "@/components/TopBar";
-import MenuButton from "@/components/MenuButton";
 import ABRWaveformChart from "@/components/ABRWaveformChart";
-import { Card, StatusDot } from "@/components/ui";
+import { Button, ButtonLink, Card, Notice, Page, Stat, StatusDot, inputClass } from "@/components/ui";
 import { useBackend } from "@/hooks/useBackend";
 import { api, backendUrl, type DummyOptions, type DummyRecording } from "@/lib/api";
 import { formatAgo, formatDuration, statusLabel } from "@/lib/abr";
 import { useSettings, writeSettings } from "@/lib/settings";
-import { MdAdminPanelSettings, MdPlayArrow, MdRefresh, MdScience, MdStop, MdTerminal } from "react-icons/md";
+import { MdArrowForward, MdOpenInNew, MdPlayArrow, MdRefresh, MdStop } from "react-icons/md";
 
 const SYNTHETIC = "synthetic";
 const DEFAULT_OPTS: Required<DummyOptions> = { source: SYNTHETIC, stims: 600, noise_uv: 4, mains_uv: 1.5, no_response: false, reset: true };
@@ -72,71 +70,66 @@ export default function AdminPage() {
   return (
     <>
       <TopBar
-        left={
-          <>
-            <MenuButton />
-            <h1 className="flex items-center gap-2 text-lg font-bold text-primary"><MdAdminPanelSettings />Admin</h1>
-          </>
-        }
-        right={<span className="hidden sm:block text-[11px] font-mono text-on-surface-variant">{backendUrl()}</span>}
+        title="Admin"
       />
 
-      <main className="pt-20 px-4 md:px-12 pb-10 max-w-7xl mx-auto space-y-6">
+      <Page>
         {/* ── Token ─────────────────────────────────────────── */}
-        <Card title="Access token">
+        <Card title="Access token" description={unauthorized ? undefined : "Stored only in this browser and sent as X-Log-Token."}>
           <div className="flex flex-col sm:flex-row gap-2">
             <input
               type="password"
+              aria-label="Access token"
               value={token ?? adminToken}
               onChange={e => setToken(e.target.value)}
               placeholder="LOG_TOKEN (empty if the backend has none)"
-              className="flex-1 min-h-10 bg-surface-container-lowest border border-outline-variant rounded-lg px-3 text-sm font-mono outline-none focus:ring-2 focus:ring-primary"
+              className={`${inputClass} font-mono sm:flex-1`}
               autoComplete="off"
             />
-            <button
+            <Button
+              variant="primary"
               onClick={() => { writeSettings({ adminToken: (token ?? adminToken).trim() }); setToken(null); dummy.refetch(); logs.refetch(); }}
               disabled={token === null}
-              className="min-h-10 px-4 rounded-lg bg-primary text-on-primary text-xs font-bold disabled:opacity-40"
             >
               Save token
-            </button>
+            </Button>
           </div>
-          <p className={`mt-2 text-xs ${unauthorized ? "text-error" : "text-on-surface-variant"}`}>
-            {unauthorized ? "Backend rejected the token (401). Dummy, command and log endpoints need LOG_TOKEN." : "Stored only in this browser; sent as X-Log-Token."}
-          </p>
+          {unauthorized && <p className="mt-2 text-sm text-error">The backend rejected the token (401). Dummy, command and log endpoints need LOG_TOKEN.</p>}
         </Card>
 
-        {msg && (
-          <p role={msg.ok ? "status" : "alert"} className={`rounded-xl px-4 py-3 text-sm ${msg.ok ? "bg-secondary-container text-on-secondary-container" : "bg-error-container text-on-error-container"}`}>
-            {msg.text}
-          </p>
-        )}
+        {msg && <Notice kind={msg.ok ? "success" : "error"}>{msg.text}</Notice>}
 
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
           {/* ── Dummy generator ─────────────────────────────── */}
-          <Card title="Dummy data (server)" icon={<MdScience className="text-secondary" />} className="lg:col-span-2">
-            <div className="space-y-4">
-              <div className="flex items-center gap-2 text-sm">
+          <Card
+            title="Dummy data"
+            description="Replays synthetic or recorded ABR through the backend."
+            className="lg:col-span-2"
+            action={
+              <span className="flex items-center gap-2 text-sm">
                 <StatusDot ok={st ? st.running : null} pulse />
-                <span className="font-semibold">{st ? (st.running ? "Running" : "Stopped") : dummy.error ? "Unavailable" : "…"}</span>
-                {st?.running && st.started_at && <span className="text-xs text-on-surface-variant">since {formatAgo(st.started_at)}</span>}
-              </div>
+                <span className="font-medium text-on-surface">{st ? (st.running ? "Running" : "Stopped") : dummy.error ? "Unavailable" : "…"}</span>
+              </span>
+            }
+          >
+            <div className="space-y-4">
               {st && (
-                <dl className="grid grid-cols-2 gap-2 text-xs">
+                <dl className="grid grid-cols-2 gap-2">
                   <Stat label="Frames sent" value={st.frames.toLocaleString()} />
                   <Stat label="Stimuli sent" value={`${st.stims.toLocaleString()}${st.options.stims ? ` / ${st.options.stims}` : ""}`} />
                   <Stat label="Signal time" value={formatDuration(st.frames / 16000)} />
                   <Stat label="Mode" value={st.recording ? `recording ${st.recording.level_db ?? "?"} dB` : st.options.no_response ? "synthetic, no response" : "synthetic, with ABR"} />
                 </dl>
               )}
+              {st?.running && st.started_at && <p className="text-xs text-on-surface-variant">Started {formatAgo(st.started_at)}.</p>}
               {st?.running && st.recording && (
                 <p className="text-xs text-on-surface-variant">Ground truth: <span className="font-mono text-on-surface">{truthText(st.recording)}</span></p>
               )}
               {st?.last_error && <p className="text-xs font-mono text-error break-all">DSP: {st.last_error}</p>}
 
-              <fieldset disabled={st?.running || busy} className="grid grid-cols-3 gap-2 text-xs disabled:opacity-60">
-                <label className="col-span-3 space-y-1"><span className="text-on-surface-variant">Source</span>
-                  <select value={opts.source} onChange={e => pickSource(e.target.value)} className="w-full min-h-10 rounded-lg border border-outline-variant bg-surface-container-lowest px-2">
+              <fieldset disabled={st?.running || busy} className="grid grid-cols-3 gap-3 text-sm disabled:opacity-60">
+                <label className="col-span-3 space-y-1.5"><span className="text-on-surface-variant text-xs">Source</span>
+                  <select value={opts.source} onChange={e => pickSource(e.target.value)} className={inputClass}>
                     <option value={SYNTHETIC}>Synthetic (generated)</option>
                     {recordings.length > 0 && (
                       <optgroup label={`Server recordings${sources.data?.threshold_db != null ? ` (threshold ${sources.data.threshold_db} dB)` : ""}`}>
@@ -144,53 +137,47 @@ export default function AdminPage() {
                       </optgroup>
                     )}
                   </select>
-                  {sources.data?.error && <span className="block text-error font-mono break-all">{sources.data.error}</span>}
-                  {selected && <span className="block text-on-surface-variant">Ground truth: <span className="font-mono text-on-surface">{truthText(selected)}</span></span>}
+                  {sources.data?.error && <span className="block text-xs text-error font-mono break-all">{sources.data.error}</span>}
+                  {selected && <span className="block text-xs text-on-surface-variant">Ground truth: <span className="font-mono text-on-surface">{truthText(selected)}</span></span>}
                 </label>
-                <label className="space-y-1"><span className="text-on-surface-variant">Stimuli (0 = ∞)</span>
-                  <input type="number" min={0} step={100} value={opts.stims} onChange={num("stims")} className="w-full min-h-10 rounded-lg border border-outline-variant bg-surface-container-lowest px-2 font-mono" />
+                <label className="space-y-1.5"><span className="text-on-surface-variant text-xs">Stimuli (0 = ∞)</span>
+                  <input type="number" min={0} step={100} value={opts.stims} onChange={num("stims")} className={`${inputClass} px-2 font-mono`} />
                 </label>
-                <label className="space-y-1"><span className="text-on-surface-variant">Noise (µV RMS)</span>
-                  <input type="number" min={0} step={0.5} value={opts.noise_uv} onChange={num("noise_uv")} disabled={!isSynthetic} className="disabled:opacity-50 w-full min-h-10 rounded-lg border border-outline-variant bg-surface-container-lowest px-2 font-mono" />
+                <label className="space-y-1.5"><span className="text-on-surface-variant text-xs">Noise (µV RMS)</span>
+                  <input type="number" min={0} step={0.5} value={opts.noise_uv} onChange={num("noise_uv")} disabled={!isSynthetic} className={`${inputClass} px-2 font-mono`} />
                 </label>
-                <label className="space-y-1"><span className="text-on-surface-variant">50 Hz (µV)</span>
-                  <input type="number" min={0} step={0.5} value={opts.mains_uv} onChange={num("mains_uv")} disabled={!isSynthetic} className="disabled:opacity-50 w-full min-h-10 rounded-lg border border-outline-variant bg-surface-container-lowest px-2 font-mono" />
+                <label className="space-y-1.5"><span className="text-on-surface-variant text-xs">50 Hz (µV)</span>
+                  <input type="number" min={0} step={0.5} value={opts.mains_uv} onChange={num("mains_uv")} disabled={!isSynthetic} className={`${inputClass} px-2 font-mono`} />
                 </label>
-                <label className="col-span-3 flex items-center gap-2"><input type="checkbox" checked={opts.no_response} disabled={!isSynthetic} onChange={e => setOpts(o => ({ ...o, no_response: e.target.checked }))} />No ABR response (should end as Refer)</label>
-                <label className="col-span-3 flex items-center gap-2"><input type="checkbox" checked={opts.reset} onChange={e => setOpts(o => ({ ...o, reset: e.target.checked }))} />Reset the running average first</label>
+                <label className="col-span-3 flex items-center gap-2"><input type="checkbox" className="accent-primary" checked={opts.no_response} disabled={!isSynthetic} onChange={e => setOpts(o => ({ ...o, no_response: e.target.checked }))} />No ABR response (should end as Refer)</label>
+                <label className="col-span-3 flex items-center gap-2"><input type="checkbox" className="accent-primary" checked={opts.reset} onChange={e => setOpts(o => ({ ...o, reset: e.target.checked }))} />Reset the running average first</label>
               </fieldset>
 
               <div className="flex gap-2">
                 {st?.running ? (
-                  <button onClick={() => act(api.dummyStop, "Dummy stopped.")} disabled={busy} className="min-h-10 flex items-center gap-1.5 px-4 rounded-lg bg-error text-on-error text-xs font-bold disabled:opacity-60">
-                    <MdStop className="text-lg" />Stop dummy
-                  </button>
+                  <Button variant="danger" onClick={() => act(api.dummyStop, "Dummy stopped.")} disabled={busy}><MdStop />Stop dummy</Button>
                 ) : (
-                  <button onClick={() => act(() => api.dummyStart(opts), "Dummy started — watch it on Start Scan or below.")} disabled={busy || !!dummy.error} className="min-h-10 flex items-center gap-1.5 px-4 rounded-lg bg-secondary text-on-secondary text-xs font-bold disabled:opacity-50">
-                    <MdPlayArrow className="text-lg" />Play dummy
-                  </button>
+                  <Button variant="secondary" onClick={() => act(() => api.dummyStart(opts), "Dummy started — watch it on Start Scan or below.")} disabled={busy || !!dummy.error}><MdPlayArrow />Play dummy</Button>
                 )}
-                <button onClick={() => act(api.reset, "Average reset.")} disabled={busy} className="min-h-10 flex items-center gap-1.5 px-3 rounded-lg border border-outline-variant text-xs font-bold text-primary disabled:opacity-50">
-                  <MdRefresh className="text-lg" />Reset average
-                </button>
+                <Button variant="outline" onClick={() => act(api.reset, "Average reset.")} disabled={busy}><MdRefresh />Reset average</Button>
               </div>
-              <p className="text-[11px] text-on-surface-variant">
+              <p className="text-xs text-on-surface-variant">
                 The backend runs DSP in a new Python process per trial (~2–3 trials/s), so the dummy runs slower than real time.
               </p>
             </div>
           </Card>
 
           {/* ── Live result ─────────────────────────────────── */}
-          <Card title="Current average" className="lg:col-span-3" action={<Link href="/scan" className="text-xs font-bold text-primary hover:underline">Open live scan →</Link>}>
+          <Card title="Current average" className="lg:col-span-3" action={<ButtonLink href="/scan" variant="ghost" size="sm">Open live scan<MdArrowForward /></ButtonLink>}>
             {r ? (
-              <div className="space-y-3">
-                <dl className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+              <div className="space-y-4">
+                <dl className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   <Stat label="Trials" value={r.trial_count.toLocaleString()} />
                   <Stat label="Status" value={statusLabel(r.status ?? r.quality)} />
                   <Stat label="SNR Ch 1" value={`${(r.snr?.[0] ?? 0).toFixed(1)} dB`} />
                   <Stat label="Verdict" value={r.analysis?.verdict ?? "—"} />
                 </dl>
-                <ABRWaveformChart data={r} range={[0, 10]} height={220} />
+                <ABRWaveformChart data={r} range={[0, 10]} height={240} />
               </div>
             ) : (
               <p className="text-sm text-on-surface-variant">{abr.error ?? "Loading…"}</p>
@@ -200,25 +187,29 @@ export default function AdminPage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
           {/* ── Command ─────────────────────────────────────── */}
-          <Card title="Send command to ESP32" icon={<MdTerminal className="text-secondary" />} className="lg:col-span-2">
+          <Card title="Send command to ESP32" description="Same commands as the serial console." className="lg:col-span-2">
             <form
               className="space-y-2"
               onSubmit={e => { e.preventDefault(); if (cmd.trim()) act(() => api.command(device, cmd.trim()), `Sent "${cmd.trim()}" to ${device || "all devices"}.`); }}
             >
-              <select value={device} onChange={e => setDevice(e.target.value)} className="w-full min-h-10 rounded-lg border border-outline-variant bg-surface-container-lowest px-2 text-sm font-mono">
+              <select aria-label="Device" value={device} onChange={e => setDevice(e.target.value)} className={`${inputClass} font-mono`}>
                 <option value="">All devices</option>
                 {(devs.data?.devices ?? []).map(id => <option key={id} value={id}>{id}</option>)}
               </select>
               <div className="flex gap-2">
-                <input value={cmd} onChange={e => setCmd(e.target.value)} placeholder="e.g. on, off, l -30, f 1000, ?" className="flex-1 min-h-10 rounded-lg border border-outline-variant bg-surface-container-lowest px-3 text-sm font-mono" />
-                <button type="submit" disabled={busy || !cmd.trim()} className="min-h-10 px-4 rounded-lg bg-primary text-on-primary text-xs font-bold disabled:opacity-40">Send</button>
+                <input aria-label="Command" value={cmd} onChange={e => setCmd(e.target.value)} placeholder="on, off, l -30, f 1000, ?" className={`${inputClass} font-mono flex-1`} />
+                <Button type="submit" variant="primary" disabled={busy || !cmd.trim()}>Send</Button>
               </div>
             </form>
           </Card>
 
           {/* ── Logs ────────────────────────────────────────── */}
-          <Card title="Device logs" className="lg:col-span-3" action={<a href={`${backendUrl()}/logs`} target="_blank" rel="noreferrer" className="text-xs font-bold text-primary hover:underline">Full log page →</a>}>
-            <div className="h-64 overflow-y-auto rounded-lg bg-surface-container-low border border-outline-variant p-2 font-mono text-[11px] leading-5">
+          <Card
+            title="Device logs"
+            className="lg:col-span-3"
+            action={<a href={`${backendUrl()}/logs`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline">Full log page<MdOpenInNew /></a>}
+          >
+            <div className="h-64 overflow-y-auto rounded-xl bg-surface-container-low p-3 font-mono text-[11px] leading-5">
               {logs.error ? (
                 <p className="text-error">{logs.error}</p>
               ) : (logs.data?.lines ?? []).length === 0 ? (
@@ -233,16 +224,7 @@ export default function AdminPage() {
             </div>
           </Card>
         </div>
-      </main>
+      </Page>
     </>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg bg-surface-container-low px-3 py-2">
-      <dt className="text-[10px] uppercase tracking-widest font-bold text-on-surface-variant">{label}</dt>
-      <dd className="font-mono tabular-nums font-semibold mt-0.5">{value}</dd>
-    </div>
   );
 }

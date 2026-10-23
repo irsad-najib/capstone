@@ -33,7 +33,7 @@ export default function NotificationWatcher() {
         await api.health();
         online = true;
       } catch {
-        if (online !== false) notify("offline", "Backend offline", "Neurosound backend is not responding.");
+        if (online !== false) notify("offline", "Backend offline", "NeuroSound backend is not responding.");
         online = false;
         return;
       }

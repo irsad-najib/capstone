@@ -2,7 +2,7 @@
  * Typed API client for the Go backend (neurosound-backend).
  *
  * All functions return typed data or throw on network/HTTP error.
- * Use backendUrl() everywhere so the URL can be overridden from Settings.
+ * Use backendUrl() everywhere; the URL comes from NEXT_PUBLIC_BACKEND_URL.
  */
 import { readSettings } from "@/lib/settings";
 
@@ -10,8 +10,7 @@ export const DEFAULT_BACKEND_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL ?? "https://capstone.irsad.site";
 
 export function backendUrl(): string {
-  const override = readSettings().backendUrl.trim();
-  return (override || DEFAULT_BACKEND_URL).replace(/\/+$/, "");
+  return DEFAULT_BACKEND_URL.replace(/\/+$/, "");
 }
 
 // ── Types ──────────────────────────────────────────────────────
@@ -37,6 +36,8 @@ export interface DeviceDetail {
     level_dbfs?: number;
     ch?: string;
     uptime_ms?: number;
+    bat_mv?: number;   // tegangan baterai (mV), tidak ada kalau baterai tidak terdeteksi
+    bat_pct?: number;  // 0..100
   };
   audio_test_at?: string;
 }

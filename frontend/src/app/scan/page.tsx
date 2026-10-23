@@ -1,32 +1,65 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import TopBar from "@/components/TopBar";
-import MenuButton from "@/components/MenuButton";
 import ABRWaveformChart from "@/components/ABRWaveformChart";
 import RawWaveformChart from "@/components/RawWaveformChart";
 import FrameLog from "@/components/FrameLog";
-import { OfflineBanner, StatusDot } from "@/components/ui";
+import {
+  Badge, Button, Card, Notice, OfflineBanner, OutcomeChip, Page, Segmented, Stat, StatusDot,
+} from "@/components/ui";
 import { useABRStream } from "@/hooks/useABRStream";
 import { useBackend } from "@/hooks/useBackend";
-import { api, backendUrl, type Ear } from "@/lib/api";
-import { MIN_TRIALS, SNR_GOOD_DB, formatAgo, statusLabel, validWaves } from "@/lib/abr";
+import { api, backendUrl, type ABRResult, type Ear } from "@/lib/api";
+import { MIN_TRIALS, SNR_GOOD_DB, formatAgo, outcomeOf, preStimMs, statusLabel, validWaves } from "@/lib/abr";
+import { addEarResult, clearEar, clearEarSlots, thresholdOf, useEarSlots, type EarResult } from "@/lib/earSlots";
 import { useSettings } from "@/lib/settings";
 import {
-  MdAdd, MdPause, MdPlayArrow, MdRefresh, MdRemove, MdSave, MdScience, MdStop, MdVolumeUp,
+  MdAdd, MdPause, MdPersonAdd, MdPlayArrow, MdRefresh, MdRemove, MdSave, MdScience, MdStop,
 } from "react-icons/md";
 
 type Tab = "abr" | "raw";
 type Range = "abr" | "full";
+/** "both" = kiri lalu kanan otomatis, "single" = satu telinga saja (tes ulang / lanjutkan). */
+type RunMode = "both" | "single";
+/** Tes yang sedang berjalan: telinga, daftar level (tinggi → rendah), dan level ke berapa. */
+interface Job { mode: RunMode; ear: Ear; levels: number[]; idx: number }
 
-const DB_MIN = 40, DB_MAX = 90, DB_STEP = 10;
+const DB_MIN = 20, DB_MAX = 90, DB_STEP = 10;
+const EARS: Ear[] = ["left", "right"];
+const EAR_NAME: Record<Ear, string> = { left: "Left ear", right: "Right ear" };
+/** Abaikan target trial sebentar setelah reset: paket SSE lama bisa masih membawa hitungan lama. */
+const SETTLE_MS = 5000;
+/** Waktu sekarang; di luar komponen supaya tidak dianggap dipanggil saat render. */
+const nowMs = () => Date.now();
+
+/** Ringkasan rata-rata saat disimpan, untuk panel telinga. */
+function toEarResult(r: ABRResult, file: string, stimDb: number): EarResult {
+  return {
+    file,
+    saved_at: new Date().toISOString(),
+    outcome: outcomeOf({ trial_count: r.trial_count, status: r.status ?? r.quality, verdict: r.analysis?.verdict }),
+    trials: r.trial_count,
+    stim_db: stimDb,
+    snr: r.snr?.[0],
+    wave_v_ms: validWaves(r.analysis?.waves).find(w => w.name === "V")?.latency_ms,
+    chart: {
+      abr_average: [r.abr_average?.[0] ?? []],
+      sampling_rate: r.sampling_rate,
+      epoch_ms: r.epoch_ms,
+      pre_stim_ms: preStimMs(r),
+      trial_count: r.trial_count,
+      analysis: r.analysis,
+    },
+  };
+}
 
 export default function ScanPage() {
-  const router   = useRouter();
   const settings = useSettings();
   const stream   = useABRStream();
   const { status, abrResult, prevResult, raw, packets, lastPacketAt, paused, setPaused, simulation, setSimulation, clearLocal } = stream;
+  const slots    = useEarSlots();
 
   const isLive  = status === "live";
   const devices = useBackend(api.devices, 5_000);
@@ -37,10 +70,16 @@ export default function ScanPage() {
   const [showCh2, setShowCh2]   = useState(false);
   const [showGhost, setShowGhost] = useState(true);
   const [ear, setEar]           = useState<Ear>("left");
+  const [job, setJob]           = useState<Job | null>(null);
+  const [routeWarn, setRouteWarn] = useState(false);
   const [pendingDb, setPendingDb] = useState<number | null>(null);
   const [busy, setBusy]         = useState<null | "start" | "stop" | "db" | "reset" | "save">(null);
-  const [message, setMessage]   = useState<{ kind: "error" | "info"; text: string } | null>(null);
+  const [message, setMessage]   = useState<{ kind: "error" | "info" | "success"; text: string } | null>(null);
   const [now, setNow]           = useState(() => Date.now());
+
+  // Dibaca di dalam alur async, jadi disimpan juga di ref.
+  const jobRef      = useRef<Job | null>(null);
+  const earStartRef = useRef(0);
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
@@ -49,17 +88,24 @@ export default function ScanPage() {
 
   const deviceList = devices.data?.devices ?? [];
   const deviceName = deviceList[0] ?? null;
+  const battery = devices.data?.detail?.find(d => d.id === deviceName)?.audio_test?.bat_pct;
   const stimRunning = isLive && !!stim.data?.running;
   const db = pendingDb ?? stim.data?.db ?? settings.stimDb;
 
+  const levels   = [...settings.testLevels].sort((a, b) => b - a);
   const trials   = abrResult.trial_count;
   const target   = Math.max(MIN_TRIALS, settings.targetTrials);
   const snr      = abrResult.snr ?? [];
   const waves    = validWaves(abrResult.analysis?.waves);
   const ivInt    = waves.length ? abrResult.analysis?.interpeak_ms?.["I-V"] : undefined;
+  const testing  = job !== null;
   const canSave  = isLive && trials >= MIN_TRIALS && busy !== "save";
+  const done     = (e: Ear) => slots[e].length > 0;
+  const bothDone = done("left") && done("right");
+  // Tes yang terhenti di tengah: lanjutkan telinga yang belum, tanpa menghapus hasil yang sudah ada.
+  const nextEar: Ear | null = !done("left") ? (done("right") ? "left" : null) : !done("right") ? "right" : null;
 
-  async function run<T>(kind: NonNullable<typeof busy>, fn: () => Promise<T>, ok?: (r: T) => string | void) {
+  async function act<T>(kind: NonNullable<typeof busy>, fn: () => Promise<T>, ok?: (r: T) => string | void) {
     setBusy(kind);
     setMessage(null);
     try {
@@ -75,31 +121,93 @@ export default function ScanPage() {
     }
   }
 
-  const startStim = () => run("start", api.stimStart, r => {
-    stim.refetch();
-    return r.sent === 0 ? "Stimulus marked as running, but no ESP32 is connected to receive the command." : undefined;
-  });
-  const stopStim = () => run("stop", api.stimStop, () => { stim.refetch(); });
-
   async function changeDb(next: number) {
     const v = Math.min(DB_MAX, Math.max(DB_MIN, next));
     setPendingDb(v);
-    await run("db", () => api.setDB(v), () => { stim.refetch(); });
+    await act("db", () => api.setDB(v), () => { stim.refetch(); });
     setPendingDb(null);
   }
 
   async function resetAverage() {
     if (simulation) { clearLocal(); return; }
-    await run("reset", api.reset, () => { clearLocal(); });
+    await act("reset", api.reset, () => { clearLocal(); });
   }
 
+  /** Arahkan bunyi ke satu telinga (perintah konsol ESP32 "c L" / "c R"). */
+  async function routeEar(e: Ear) {
+    try {
+      const r = await api.command(deviceName ?? "", e === "left" ? "c L" : "c R");
+      setRouteWarn(r.sent === 0);
+    } catch {
+      setRouteWarn(true);
+    }
+  }
+
+  /** Mulai satu level: rata-rata baru, bunyi ke telinga itu di level itu, stimulus jalan. */
+  async function beginLevel(j: Job) {
+    jobRef.current = j;
+    setJob(j);
+    setEar(j.ear);
+    await api.reset().catch(() => {});
+    clearLocal();
+    earStartRef.current = nowMs();
+    await routeEar(j.ear);
+    await api.setDB(j.levels[j.idx]).catch(() => {});
+    await act("start", api.stimStart, r => {
+      stim.refetch();
+      return r.sent === 0 ? "No ESP32 is connected to play the sound. Connect the device, then start again." : undefined;
+    });
+  }
+
+  function startTest() {
+    clearEarSlots();
+    void beginLevel({ mode: "both", ear: "left", levels, idx: 0 });
+  }
+
+  function testEar(e: Ear) {
+    clearEar(e);
+    void beginLevel({ mode: "single", ear: e, levels, idx: 0 });
+  }
+
+  async function stopTest() {
+    jobRef.current = null;
+    setJob(null);
+    await act("stop", api.stimStop, () => { stim.refetch(); });
+  }
+
+  /** Simpan level aktif ke panel telinganya, lalu hentikan stimulus dan reset rata-rata. */
   const savingRef = useRef(false);
-  async function save() {
-    if (savingRef.current) return;
+  async function save(): Promise<EarResult | null> {
+    if (savingRef.current) return null;
     savingRef.current = true;
-    const r = await run("save", () => api.saveSession({ ear, device: deviceName ?? undefined, stim_db: db }));
+    const savedEar = ear;
+    const snapshot = abrResult;
+    const r = await act("save", () => api.saveSession({ ear: savedEar, device: deviceName ?? undefined, stim_db: db }));
     savingRef.current = false;
-    if (r?.file) router.push(`/results?file=${encodeURIComponent(r.file)}`);
+    if (!r?.file) return null;
+
+    const result = toEarResult(snapshot, r.file, db);
+    addEarResult(savedEar, result);
+    await api.stimStop().catch(() => {});
+    await api.reset().catch(() => {});
+    clearLocal();
+    stim.refetch();
+    return result;
+  }
+
+  /** Simpan manual dari bagian Technical details. */
+  async function saveNow() {
+    const savedEar = ear;
+    if (!(await save())) return;
+    jobRef.current = null;
+    setJob(null);
+    setMessage({ kind: "success", text: `${EAR_NAME[savedEar]} at ${db} dB saved.` });
+  }
+
+  function newPatient() {
+    clearEarSlots();
+    setEar("left");
+    setMessage(null);
   }
 
   // Terapkan level default dari Settings sekali saat halaman dibuka (hanya kalau stimulus belum jalan)
@@ -113,279 +221,346 @@ export default function ScanPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLive, stim.data, settings.stimDb]);
 
-  // Auto-save sekali saat target trial tercapai (Settings → Scan defaults)
+  // Target trial tercapai → simpan level ini, lalu lanjut ke level / telinga berikutnya.
+  // Di luar tes berjalan hanya otomatis kalau Settings → Auto-save aktif.
   const autoSavedRef = useRef(false);
   useEffect(() => {
     if (trials < target) autoSavedRef.current = false;
-    if (!settings.autoSave || !isLive || autoSavedRef.current || trials < target) return;
+    const auto = settings.autoSave || testing;
+    if (!auto || !isLive || autoSavedRef.current || trials < target) return;
+    if (nowMs() - earStartRef.current < SETTLE_MS) return;
     autoSavedRef.current = true;
-    void save();
+    void (async () => {
+      const result = await save();
+      const j = jobRef.current;
+      if (!result || !j) return;
+      // Tidak ada respons di level ini → level lebih rendah juga tidak akan ada (ambang sudah lewat).
+      const responded = result.outcome === "Pass";
+      if (j.idx + 1 < j.levels.length && (responded || !settings.stopAtThreshold)) {
+        await beginLevel({ ...j, idx: j.idx + 1 });
+      } else if (j.mode === "both" && j.ear === "left") {
+        await beginLevel({ ...j, ear: "right", idx: 0 });
+      } else {
+        jobRef.current = null;
+        setJob(null);
+        setMessage({ kind: "success", text: j.mode === "both" ? "Both ears are done." : `${EAR_NAME[j.ear]} done.` });
+      }
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trials, target, settings.autoSave, isLive]);
+  }, [trials, target, settings.autoSave, isLive, testing]);
 
   const badge = paused
-    ? { text: "PAUSED", cls: "bg-surface-container-high text-on-surface-variant" }
+    ? <Badge>Paused</Badge>
     : status === "live"
-      ? { text: stimRunning ? "LIVE · STIM ON" : "LIVE", cls: "bg-error text-on-error" }
+      ? <Badge tone={stimRunning ? "live" : "success"} pulse={stimRunning}>{stimRunning ? "Recording" : "Ready"}</Badge>
       : status === "simulation"
-        ? { text: "SIMULATION", cls: "bg-tertiary-fixed text-on-tertiary-fixed-variant" }
+        ? <Badge tone="warning">Simulation</Badge>
         : status === "connecting"
-          ? { text: "CONNECTING…", cls: "bg-surface-container-high text-on-surface-variant" }
-          : { text: "OFFLINE", cls: "bg-error-container text-on-error-container" };
+          ? <Badge>Connecting…</Badge>
+          : <Badge tone="error">Offline</Badge>;
+
+  const intro = job
+    ? `Testing the ${EAR_NAME[job.ear].toLowerCase()} at ${job.levels[job.idx]} dB.`
+    : bothDone
+      ? "Both ears are done."
+      : nextEar
+        ? `Continue with the ${EAR_NAME[nextEar].toLowerCase()}.`
+        : `Tests both ears at ${levels.join(", ")} dB.`;
 
   return (
     <>
       <TopBar
-        left={
-          <>
-            <MenuButton />
-            <div className="flex items-center gap-3 min-w-0">
-              <span className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-bold tracking-wider ${badge.cls}`}>
-                {status === "live" && !paused && <span className="w-2 h-2 rounded-full bg-on-error pulse-red" />}
-                {badge.text}
-              </span>
-              <span className="hidden sm:flex items-center gap-1.5 text-xs text-on-surface-variant truncate">
-                <StatusDot ok={simulation ? null : !!deviceName} />
-                <span className="font-mono truncate">{simulation ? "simulated device" : deviceName ?? "no device"}</span>
-              </span>
-            </div>
-          </>
-        }
-        right={
-          <div className="hidden md:flex items-center gap-4 text-xs text-on-surface-variant font-mono tabular-nums">
-            <span>Trials <strong className="text-primary">{trials.toLocaleString()}</strong></span>
-            <span>Stim <strong className="text-primary">{(abrResult.stim_count ?? 0).toLocaleString()}</strong></span>
-            <span>SNR <strong className={(snr[0] ?? 0) >= SNR_GOOD_DB ? "text-secondary" : "text-primary"}>{(snr[0] ?? 0).toFixed(1)} dB</strong></span>
+        title="Start Scan"
+        actions={
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="hidden sm:flex items-center gap-1.5 text-xs text-on-surface-variant truncate">
+              <StatusDot ok={simulation ? null : !!deviceName} />
+              <span className="font-mono truncate">{simulation ? "simulated device" : deviceName ?? "no device"}</span>
+              {!simulation && battery != null && (
+                <span className={`tabular-nums ${battery <= 15 ? "text-error font-semibold" : ""}`} title="Headset battery">{battery}%</span>
+              )}
+            </span>
+            {badge}
           </div>
         }
       />
 
-      <main className="pt-20 px-4 md:px-12 pb-10 max-w-7xl mx-auto space-y-6">
-        {/* ── Header + controls ──────────────────────────────── */}
-        <section className="flex flex-col xl:flex-row xl:items-end justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-primary">Auditory Brainstem Response</h1>
-            <p className="text-sm text-on-surface-variant">
-              Tone burst · {db} dB · {ear === "left" ? "Left" : "Right"} ear · {abrResult.sampling_rate / 1000} kHz, epoch {abrResult.epoch_ms} ms
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Ear */}
-            <div className="flex rounded-lg border border-outline-variant overflow-hidden" role="group" aria-label="Ear">
-              {(["left", "right"] as Ear[]).map(e => (
-                <button
-                  key={e}
-                  onClick={() => setEar(e)}
-                  aria-pressed={ear === e}
-                  className={`min-h-10 px-3 text-xs font-bold ${ear === e ? "bg-primary text-on-primary" : "bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container-low"}`}
-                >
-                  {e === "left" ? "Left" : "Right"}
-                </button>
-              ))}
+      <Page>
+        {/* ── Header + main action ───────────────────────────── */}
+        <section className="pt-2">
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+            <div className="max-w-2xl">
+              <h2 className="text-2xl font-semibold tracking-tight text-on-surface">Hearing test</h2>
+              <p className="text-sm text-on-surface-variant mt-1">{intro}</p>
             </div>
 
-            {/* Level */}
-            <div className="flex items-center rounded-lg border border-outline-variant bg-surface-container-lowest" aria-label="Stimulus level">
-              <button onClick={() => changeDb(db - DB_STEP)} disabled={!isLive || db <= DB_MIN || busy === "db"} className="min-h-10 px-2.5 text-on-surface-variant disabled:opacity-40" aria-label="Lower level">
-                <MdRemove />
-              </button>
-              <span className="px-1 text-xs font-bold font-mono tabular-nums flex items-center gap-1 text-primary">
-                <MdVolumeUp className="text-on-surface-variant" />{db} dB
-              </span>
-              <button onClick={() => changeDb(db + DB_STEP)} disabled={!isLive || db >= DB_MAX || busy === "db"} className="min-h-10 px-2.5 text-on-surface-variant disabled:opacity-40" aria-label="Raise level">
-                <MdAdd />
-              </button>
+            <div className="flex flex-wrap items-center gap-2">
+              {testing ? (
+                <Button variant="danger" onClick={stopTest} disabled={busy === "stop"}><MdStop />Stop test</Button>
+              ) : bothDone ? (
+                <Button variant="outline" onClick={newPatient}><MdPersonAdd />New patient</Button>
+              ) : nextEar ? (
+                <>
+                  <Button variant="ghost" onClick={newPatient}>Start over</Button>
+                  <Button variant="secondary" onClick={() => testEar(nextEar)} disabled={!isLive || busy === "start"}>
+                    <MdPlayArrow />Continue with {EAR_NAME[nextEar].toLowerCase()}
+                  </Button>
+                </>
+              ) : (
+                <Button variant="secondary" onClick={startTest} disabled={!isLive || busy === "start"}><MdPlayArrow />Start test</Button>
+              )}
             </div>
-
-            {stimRunning ? (
-              <button onClick={stopStim} disabled={busy === "stop"} className="min-h-10 flex items-center gap-1.5 px-4 rounded-lg bg-error text-on-error text-xs font-bold hover:opacity-90 disabled:opacity-60">
-                <MdStop className="text-lg" />Stop stimulus
-              </button>
-            ) : (
-              <button onClick={startStim} disabled={!isLive || busy === "start"} className="min-h-10 flex items-center gap-1.5 px-4 rounded-lg bg-secondary text-on-secondary text-xs font-bold hover:opacity-90 disabled:opacity-50">
-                <MdPlayArrow className="text-lg" />Start stimulus
-              </button>
-            )}
-
-            <button onClick={() => setPaused(!paused)} className="min-h-10 flex items-center gap-1.5 px-3 rounded-lg border border-outline-variant bg-surface-container-lowest text-primary text-xs font-bold hover:bg-surface-container-low" title="Freeze the display; acquisition keeps running">
-              {paused ? <MdPlayArrow className="text-lg" /> : <MdPause className="text-lg" />}
-              {paused ? "Resume view" : "Pause view"}
-            </button>
-
-            <button onClick={resetAverage} disabled={busy === "reset" || (!isLive && !simulation)} className="min-h-10 flex items-center gap-1.5 px-3 rounded-lg text-on-surface-variant text-xs font-bold hover:bg-surface-container-low disabled:opacity-50">
-              <MdRefresh className="text-lg" />Reset average
-            </button>
-
-            <button
-              onClick={save}
-              disabled={!canSave}
-              title={simulation ? "Simulated data cannot be saved" : trials < MIN_TRIALS ? `Needs at least ${MIN_TRIALS} trials` : undefined}
-              className="min-h-10 flex items-center gap-1.5 px-4 rounded-lg bg-primary text-on-primary text-xs font-bold hover:opacity-90 disabled:opacity-40"
-            >
-              <MdSave className="text-lg" />{busy === "save" ? "Saving…" : "Save session"}
-            </button>
           </div>
+
         </section>
 
         {status === "offline" && (
           <div className="space-y-2">
             <OfflineBanner message={`Backend ${backendUrl()} is unreachable. Retrying every 5 s.`} />
-            <button onClick={() => setSimulation(true)} className="flex items-center gap-1.5 text-xs font-bold text-primary hover:underline">
-              <MdScience />Run a simulation instead
-            </button>
+            <Button variant="ghost" size="sm" onClick={() => setSimulation(true)} className="-ml-3"><MdScience />Run a simulation instead</Button>
           </div>
         )}
         {simulation && (
-          <div className="flex items-center justify-between gap-3 rounded-xl border border-on-tertiary-container/40 bg-tertiary-fixed/50 px-4 py-3 text-sm text-on-tertiary-fixed-variant">
-            <p><strong>Simulation mode.</strong> Synthetic ABR (Wave I/III/V at 1.6/3.7/5.6 ms) plus noise — not real data, cannot be saved.</p>
-            <button onClick={() => setSimulation(false)} className="shrink-0 min-h-9 px-3 rounded-lg bg-surface-container-lowest text-xs font-bold text-primary">Back to live</button>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl bg-tertiary-fixed px-4 py-3 text-sm text-on-tertiary-fixed-variant">
+            <p><strong className="font-semibold">Simulation mode.</strong> The waveform is generated, not measured, and cannot be saved.</p>
+            <Button variant="outline" size="sm" onClick={() => setSimulation(false)} className="shrink-0">Back to live</Button>
           </div>
         )}
-        {message && (
-          <p role={message.kind === "error" ? "alert" : "status"} className={`rounded-xl px-4 py-3 text-sm ${message.kind === "error" ? "bg-error-container text-on-error-container" : "bg-surface-container text-on-surface"}`}>
-            {message.text}
-          </p>
+        {routeWarn && testing && (
+          <Notice kind="info">
+            The device did not confirm the ear switch. Check that the sound plays in the {EAR_NAME[ear].toLowerCase()}.
+          </Notice>
         )}
+        {message && <Notice kind={message.kind}>{message.text}</Notice>}
 
-        <div className="grid grid-cols-12 gap-6">
-          {/* ── Chart ───────────────────────────────────────── */}
-          <section className="col-span-12 lg:col-span-9 bg-surface-container-lowest border border-outline-variant rounded-2xl p-4 md:p-6 min-w-0">
-            <div className="flex flex-wrap items-center gap-2 border-b border-outline-variant mb-4">
-              {([["abr", "ABR Average"], ["raw", "Raw EEG"]] as const).map(([key, label]) => (
-                <button
-                  key={key}
-                  onClick={() => setTab(key)}
-                  className={`px-4 py-2.5 text-xs font-bold border-b-2 -mb-px ${tab === key ? "border-secondary text-secondary" : "border-transparent text-on-surface-variant hover:text-primary"}`}
-                >
-                  {label}
+        {/* ── Two ears, in test order ────────────────────────── */}
+        <section aria-label="Ears" className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {EARS.map((e, i) => (
+            <EarPanel
+              key={e}
+              ear={e}
+              step={i + 1}
+              job={job?.ear === e ? job : null}
+              recording={job?.ear === e && stimRunning}
+              results={slots[e]}
+              live={abrResult}
+              ghost={showGhost ? prevResult?.abr_average?.[0] ?? null : null}
+              target={target}
+              canRetest={isLive && !testing && !stimRunning}
+              onRetest={() => testEar(e)}
+              waitingText={
+                testing && job?.mode === "both" ? "Starts automatically after the left ear."
+                  : nextEar === e ? "Press Continue to test this ear."
+                    : e === "left" ? "Starts when you press Start test." : "Starts automatically after the left ear."
+              }
+            />
+          ))}
+        </section>
+
+        {/* ── Technical details (disembunyikan) ─────────────── */}
+        <details className="group bg-surface-container-lowest border border-outline-variant/60 rounded-2xl">
+          <summary className="cursor-pointer list-none px-5 py-4 flex items-center justify-between gap-3 text-sm">
+            <span>
+              <span className="font-semibold text-on-surface">Technical details</span>
+              <span className="text-on-surface-variant"> for researchers: raw signal, SNR, latencies and manual controls</span>
+            </span>
+            <span className="text-on-surface-variant transition-transform group-open:rotate-180 motion-reduce:transition-none" aria-hidden="true">▾</span>
+          </summary>
+
+          <div className="px-5 pb-5 space-y-6">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center h-8 rounded-lg border border-outline-variant bg-surface-container-lowest" role="group" aria-label="Manual stimulus level">
+                <button type="button" onClick={() => changeDb(db - DB_STEP)} disabled={!isLive || testing || db <= DB_MIN || busy === "db"} className="h-full px-2 text-on-surface-variant hover:text-on-surface disabled:opacity-40" aria-label="Lower level">
+                  <MdRemove />
                 </button>
-              ))}
-              <span className="ml-auto pb-2 text-[11px] text-on-surface-variant font-mono tabular-nums">
+                <span className="w-14 text-center text-xs font-semibold font-mono tabular-nums text-on-surface">{db} dB</span>
+                <button type="button" onClick={() => changeDb(db + DB_STEP)} disabled={!isLive || testing || db >= DB_MAX || busy === "db"} className="h-full px-2 text-on-surface-variant hover:text-on-surface disabled:opacity-40" aria-label="Raise level">
+                  <MdAdd />
+                </button>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => setPaused(!paused)} title="Freeze the display; recording keeps running">
+                {paused ? <MdPlayArrow /> : <MdPause />}{paused ? "Resume view" : "Pause view"}
+              </Button>
+              <Button variant="outline" size="sm" onClick={resetAverage} disabled={busy === "reset" || (!isLive && !simulation)}>
+                <MdRefresh />Reset average
+              </Button>
+              <Button
+                variant="outline" size="sm"
+                onClick={saveNow}
+                disabled={!canSave}
+                title={simulation ? "Simulated data cannot be saved" : trials < MIN_TRIALS ? `Needs at least ${MIN_TRIALS} trials` : undefined}
+              >
+                <MdSave />{busy === "save" ? "Saving…" : `Save ${EAR_NAME[ear].toLowerCase()} now`}
+              </Button>
+              <span className="text-xs text-on-surface-variant font-mono tabular-nums sm:ml-auto">
                 {lastPacketAt ? `last packet ${formatAgo(new Date(lastPacketAt).toISOString(), now)}` : "no packets yet"}
               </span>
             </div>
 
-            {tab === "abr" ? (
-              <div className="space-y-3">
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-on-surface-variant">
-                  <div className="flex rounded-md border border-outline-variant overflow-hidden">
-                    {([["abr", "0–10 ms"], ["full", "Full epoch"]] as const).map(([key, label]) => (
-                      <button key={key} onClick={() => setRange(key)} aria-pressed={range === key}
-                        className={`px-2.5 py-1 font-bold ${range === key ? "bg-primary text-on-primary" : "hover:bg-surface-container-low"}`}>
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                  <span className="flex items-center gap-1.5"><span className="inline-block w-5 h-0.5 bg-secondary" />Ch 1</span>
-                  <label className="flex items-center gap-1.5 cursor-pointer">
-                    <input type="checkbox" checked={showCh2} onChange={e => setShowCh2(e.target.checked)} />
-                    <span className="inline-block w-5 h-0.5 bg-primary-container" />Ch 2
-                  </label>
-                  <label className="flex items-center gap-1.5 cursor-pointer">
-                    <input type="checkbox" checked={showGhost} onChange={e => setShowGhost(e.target.checked)} />
-                    <span className="inline-block w-5 h-0.5 bg-outline opacity-60" />Previous snapshot
-                  </label>
-                  <span className="flex items-center gap-1.5"><span className="inline-block w-4 h-3 rounded-sm bg-secondary-container" />Wave V window (5–7.5 ms)</span>
+            <div className="grid grid-cols-12 gap-6">
+              <div className="col-span-12 lg:col-span-8 space-y-4 min-w-0">
+                <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-on-surface-variant">
+                  <Segmented
+                    label="Chart" size="sm" value={tab} onChange={setTab}
+                    options={[{ value: "abr", label: "ABR average" }, { value: "raw", label: "Raw EEG" }]}
+                  />
+                  {tab === "abr" && (
+                    <>
+                      <Segmented
+                        label="Time range" size="sm" value={range} onChange={setRange}
+                        options={[{ value: "abr", label: "0–10 ms" }, { value: "full", label: "Full epoch" }]}
+                      />
+                      <label className="flex items-center gap-1.5 cursor-pointer">
+                        <input type="checkbox" className="accent-primary" checked={showCh2} onChange={e => setShowCh2(e.target.checked)} />
+                        <span className="inline-block w-5 h-0.5 rounded bg-primary-container" />Ch 2
+                      </label>
+                      <label className="flex items-center gap-1.5 cursor-pointer">
+                        <input type="checkbox" className="accent-primary" checked={showGhost} onChange={e => setShowGhost(e.target.checked)} />
+                        <span className="inline-block w-5 h-0.5 rounded bg-outline opacity-60" />Previous snapshot
+                      </label>
+                    </>
+                  )}
                 </div>
-                <ABRWaveformChart
-                  data={abrResult}
-                  channels={showCh2 ? [0, 1] : [0]}
-                  ghost={showGhost ? prevResult?.abr_average?.[0] ?? null : null}
-                  range={range === "abr" ? [0, 10] : [-(abrResult.pre_stim_ms ?? 10), abrResult.epoch_ms - (abrResult.pre_stim_ms ?? 10)]}
-                  height={300}
-                />
-                <p className="text-xs text-on-surface-variant">
-                  A clear peak around 5–7 ms that keeps growing as trials increase means the ear responded.
-                </p>
+                {tab === "abr" ? (
+                  <ABRWaveformChart
+                    data={abrResult}
+                    channels={showCh2 ? [0, 1] : [0]}
+                    ghost={showGhost ? prevResult?.abr_average?.[0] ?? null : null}
+                    range={range === "abr" ? [0, 10] : [-(abrResult.pre_stim_ms ?? 10), abrResult.epoch_ms - (abrResult.pre_stim_ms ?? 10)]}
+                    height={260}
+                  />
+                ) : (
+                  <>
+                    <p className="text-xs text-on-surface-variant">
+                      Last {Math.round((raw.ch1.length / raw.fs) * 1000)} ms at {raw.fs / 1000} kHz, centred on the mean. Dashed lines are stimulus markers.
+                    </p>
+                    <RawWaveformChart raw={raw} height={260} />
+                  </>
+                )}
               </div>
-            ) : (
-              <div className="space-y-3">
-                <p className="text-[11px] text-on-surface-variant">
-                  Last {Math.round((raw.ch1.length / raw.fs) * 1000)} ms · {raw.fs / 1000} kHz · centred on mean · dashed lines = stimulus markers
-                </p>
-                <RawWaveformChart raw={raw} height={300} />
-              </div>
-            )}
-          </section>
 
-          {/* ── Scan health ─────────────────────────────────── */}
-          <aside className="col-span-12 lg:col-span-3 space-y-4">
-            <div className="bg-surface-container-lowest border border-outline-variant rounded-2xl p-5 space-y-3">
-              <h2 className="text-[11px] font-bold uppercase tracking-widest text-on-surface-variant">Trials</h2>
-              <p className="text-4xl font-bold text-primary tabular-nums">{trials.toLocaleString()}</p>
-              <div className="relative h-2.5 rounded-full bg-surface-container-high overflow-hidden" aria-label={`${trials} of ${target} trials`}>
-                <div className={`h-full ${trials >= target ? "bg-secondary" : trials >= MIN_TRIALS ? "bg-on-tertiary-container" : "bg-outline"}`} style={{ width: `${Math.min(100, (trials / target) * 100)}%` }} />
-                <span className="absolute top-0 h-full w-px bg-on-surface/50" style={{ left: `${(MIN_TRIALS / target) * 100}%` }} />
-              </div>
-              <p className="text-xs text-on-surface-variant">
-                {trials < MIN_TRIALS ? `Insufficient — ${MIN_TRIALS - trials} more to reach ${MIN_TRIALS}` : trials < target ? `Inconclusive — target ${target}` : "Target reached"}
-              </p>
-              <dl className="grid grid-cols-2 gap-2 pt-2 border-t border-outline-variant/60 text-xs">
-                <dt className="text-on-surface-variant">Stimuli</dt>
-                <dd className="text-right font-mono tabular-nums">{(abrResult.stim_count ?? 0).toLocaleString()}</dd>
-                <dt className="text-on-surface-variant">Frames</dt>
-                <dd className="text-right font-mono tabular-nums">{(abrResult.frame_count ?? 0).toLocaleString()}</dd>
+              <dl className="col-span-12 lg:col-span-4 grid grid-cols-2 gap-2 content-start">
+                <Stat label="Trials" value={trials.toLocaleString()} />
+                <Stat label="Status" value={statusLabel(abrResult.status ?? abrResult.quality)} />
+                <Stat label="SNR Ch 1" value={`${(snr[0] ?? 0).toFixed(1)} dB`} tone={(snr[0] ?? 0) >= SNR_GOOD_DB ? "good" : undefined} />
+                <Stat label="SNR Ch 2" value={`${(snr[1] ?? 0).toFixed(1)} dB`} tone={(snr[1] ?? 0) >= SNR_GOOD_DB ? "good" : undefined} />
+                <Stat label="Pearson r" value={(abrResult.pearson_r ?? 0).toFixed(3)} />
+                <Stat label="Stimuli / frames" value={`${(abrResult.stim_count ?? 0).toLocaleString()} / ${(abrResult.frame_count ?? 0).toLocaleString()}`} />
+                {(["I", "III", "V"] as const).map(name => {
+                  const w = waves.find(x => x.name === name);
+                  return <Stat key={name} label={`Wave ${name}`} value={w ? `${w.latency_ms.toFixed(2)} ms` : "—"} />;
+                })}
+                <Stat label="I–V interval" value={ivInt != null ? `${ivInt.toFixed(2)} ms` : "—"} />
               </dl>
             </div>
 
-            <div className="bg-surface-container-lowest border border-outline-variant rounded-2xl p-5 space-y-4">
-              <div className="flex items-center justify-between">
-                <h2 className="text-[11px] font-bold uppercase tracking-widest text-on-surface-variant">Signal</h2>
-                <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
-                  abrResult.status === "Konvergen" ? "bg-secondary-container text-on-secondary-container"
-                  : abrResult.status === "Terbentuk" ? "bg-tertiary-fixed text-on-tertiary-fixed-variant"
-                  : "bg-surface-container-high text-on-surface-variant"}`}>
-                  {statusLabel(abrResult.status ?? abrResult.quality)}
-                </span>
-              </div>
-              {[0, 1].map(ch => {
-                const v = snr[ch] ?? 0;
-                return (
-                  <div key={ch}>
-                    <div className="flex justify-between text-xs mb-1">
-                      <span className="font-semibold">SNR Ch {ch + 1}</span>
-                      <span className={`font-mono tabular-nums font-bold ${v >= SNR_GOOD_DB ? "text-secondary" : "text-on-surface-variant"}`}>{v.toFixed(1)} dB</span>
-                    </div>
-                    <div className="relative h-2 rounded-full bg-surface-container-high overflow-hidden">
-                      <div className={`h-full ${v >= SNR_GOOD_DB ? "bg-secondary" : "bg-outline"}`} style={{ width: `${Math.max(0, Math.min(100, (v / 12) * 100))}%` }} />
-                      <span className="absolute top-0 h-full w-px bg-on-surface/50" style={{ left: `${(SNR_GOOD_DB / 12) * 100}%` }} />
-                    </div>
-                  </div>
-                );
-              })}
-              <div className="flex justify-between text-xs pt-2 border-t border-outline-variant/60">
-                <span className="text-on-surface-variant">Pearson r (stability)</span>
-                <span className="font-mono tabular-nums font-bold">{(abrResult.pearson_r ?? 0).toFixed(3)}</span>
-              </div>
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-on-surface">Packet log <span className="font-normal text-on-surface-variant">raw stream packets, every 200 ms</span></p>
+              <FrameLog packets={packets} />
             </div>
-
-            <div className="bg-primary-container text-primary-fixed rounded-2xl p-5 space-y-2">
-              <h2 className="text-[11px] font-bold uppercase tracking-widest text-on-primary-container">Latencies</h2>
-              {(["I", "III", "V"] as const).map(name => {
-                const w = waves.find(x => x.name === name);
-                return (
-                  <div key={name} className="flex items-baseline justify-between bg-white/5 rounded-lg px-3 py-2">
-                    <span className="text-sm font-bold">Wave {name}</span>
-                    <span className="font-mono tabular-nums text-lg font-bold">{w ? w.latency_ms.toFixed(2) : "—"}<span className="text-xs font-normal opacity-70"> ms</span></span>
-                  </div>
-                );
-              })}
-              <div className="flex items-baseline justify-between rounded-lg px-3 py-2 bg-secondary-container text-on-secondary-container">
-                <span className="text-sm font-bold">I–V interval</span>
-                <span className="font-mono tabular-nums text-lg font-bold">{ivInt != null ? ivInt.toFixed(2) : "—"}<span className="text-xs font-normal opacity-70"> ms</span></span>
-              </div>
-            </div>
-          </aside>
-        </div>
-
-        <details className="bg-surface-container-lowest border border-outline-variant rounded-2xl">
-          <summary className="cursor-pointer px-5 py-4 text-sm font-semibold text-primary">
-            Packet log <span className="font-normal text-on-surface-variant">— raw stream packets (every 200 ms)</span>
-          </summary>
-          <div className="px-5 pb-5"><FrameLog packets={packets} /></div>
+          </div>
         </details>
-      </main>
+      </Page>
     </>
+  );
+}
+
+/**
+ * Satu telinga: gelombang tiap level ditumpuk dari yang paling keras (gaya
+ * intensity series ABR), level yang sedang dites tampil live di atasnya.
+ */
+function EarPanel({ ear, step, job, recording, results, live, ghost, target, canRetest, onRetest, waitingText }: {
+  ear: Ear;
+  step: number;
+  job: Job | null;
+  recording: boolean;
+  results: EarResult[];
+  live: ABRResult;
+  ghost: number[] | null;
+  target: number;
+  canRetest: boolean;
+  onRetest: () => void;
+  waitingText: string;
+}) {
+  const active = job !== null;
+  const level = job ? job.levels[job.idx] : null;
+  const trials = live.trial_count;
+  const signalGood = (live.snr?.[0] ?? 0) >= SNR_GOOD_DB;
+  const threshold = thresholdOf(results);
+
+  return (
+    <Card
+      className={active ? "border-primary/50! ring-2 ring-primary/15" : ""}
+      title={
+        <div className="flex items-center gap-2.5">
+          <span className={`flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold ${
+            active ? "bg-primary text-on-primary" : results.length ? "bg-secondary-container text-on-secondary-container" : "bg-surface-container-high text-on-surface-variant"
+          }`} aria-hidden="true">
+            {step}
+          </span>
+          <h3 className="text-[15px] font-semibold text-on-surface">{EAR_NAME[ear]}</h3>
+        </div>
+      }
+      action={
+        active ? <Badge tone={recording ? "live" : "neutral"} pulse={recording}>{recording ? `Testing ${level} dB` : `${level} dB`}</Badge>
+          : results.length ? (threshold != null ? <Badge tone="success">Threshold {threshold} dB</Badge> : <Badge tone="error">No response</Badge>)
+            : <Badge>Waiting</Badge>
+      }
+    >
+      <div className="space-y-4">
+        {active && job && (
+          <div className="space-y-3">
+            <ABRWaveformChart data={live} ghost={ghost} range={[0, 10]} height={180} compact />
+            <div>
+              <div className="flex items-baseline justify-between text-sm mb-1.5">
+                <span className="text-on-surface-variant">Level {job.idx + 1} of {job.levels.length}, responses collected</span>
+                <span className="font-semibold tabular-nums text-on-surface">{trials.toLocaleString()} <span className="font-normal text-on-surface-variant">of {target.toLocaleString()}</span></span>
+              </div>
+              <div className="h-2 rounded-full bg-surface-container-high overflow-hidden" role="progressbar" aria-valuemin={0} aria-valuemax={target} aria-valuenow={trials} aria-label={`${EAR_NAME[ear]} at ${level} dB`}>
+                <div className="h-full rounded-full bg-secondary transition-[width] motion-reduce:transition-none" style={{ width: `${Math.min(100, (trials / target) * 100)}%` }} />
+              </div>
+            </div>
+            <p className="flex items-center gap-2 text-sm text-on-surface-variant">
+              <StatusDot ok={trials < MIN_TRIALS ? null : signalGood} />
+              {trials < MIN_TRIALS ? "Signal quality shows after the first 100 responses." : signalGood ? "Signal quality is good." : "Signal is weak. Ask the patient to relax and stay still."}
+            </p>
+          </div>
+        )}
+
+        {results.length > 0 && (
+          <ul className="divide-y divide-outline-variant/50 rounded-xl bg-surface-container-low">
+            {results.map(r => (
+              <li key={r.stim_db} className="flex items-center gap-3 px-3 py-2">
+                <span className="w-12 shrink-0 text-sm font-semibold tabular-nums text-on-surface">{r.stim_db} dB</span>
+                <div className="flex-1 min-w-0">
+                  <ABRWaveformChart data={r.chart} range={[0, 10]} height={72} compact />
+                </div>
+                <div className="shrink-0 flex flex-col items-end gap-1">
+                  <OutcomeChip outcome={r.outcome} />
+                  <Link href={`/results?file=${encodeURIComponent(r.file)}`} className="text-xs font-medium text-primary hover:underline">View</Link>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {!active && results.length === 0 && (
+          <div className="h-[180px] rounded-xl border border-dashed border-outline-variant flex items-center justify-center text-center px-6 text-sm text-on-surface-variant">
+            {waitingText}
+          </div>
+        )}
+
+        {!active && results.length > 0 && (
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm text-on-surface-variant">
+              {threshold != null
+                ? <>Responds down to <span className="font-semibold text-on-surface">{threshold} dB</span>.</>
+                : "No clear response at the tested levels."}
+            </p>
+            <Button variant="ghost" size="sm" onClick={onRetest} disabled={!canRetest}>Retest</Button>
+          </div>
+        )}
+      </div>
+    </Card>
   );
 }
