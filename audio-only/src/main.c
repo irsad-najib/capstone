@@ -20,6 +20,7 @@
  *                     (default: s 0 -60 10 5). "s" lagi untuk berhenti
  *   p                 putar frekuensi audiometri 250..8000 Hz, 3 detik tiap step
  *   i2s               laju frame I2S, error write, sampel puncak
+ *   bat               tegangan dan persen baterai (IO35)
  *   net               status WiFi / WebSocket
  *   wifi reset        hapus kredensial WiFi, restart ke mode portal
  *   ?                 status + bantuan
@@ -44,6 +45,7 @@
 #include "driver/gpio.h"
 #include "esp_timer.h"
 #include "net.h"
+#include "battery.h"
 
 #define PIN_BCK         32
 #define PIN_LRCK        33
@@ -157,6 +159,13 @@ static void print_i2s_diag(void)
     g_i2s_peak  = 0;
 }
 
+static void print_battery(void)
+{
+    int mv, pct;
+    if (battery_get(&mv, &pct)) LOG("BAT", "%d%%  (%.2f V)", pct, mv / 1000.0f);
+    else                        LOG("BAT", "tidak terdeteksi");
+}
+
 static void print_status(void)
 {
     float dac_vrms = DAC_FS_VRMS * powf(10.0f, g_level_db / 20.0f);
@@ -173,7 +182,7 @@ static void print_help(void)
 {
     printf("\n  f <Hz> | l <dBFS> | + - ++ -- | c L/R/B | on | off\n"
            "  s [mulai akhir langkah detik]  (default s 0 -60 10 5)\n"
-           "  p  (sweep 250/500/1k/2k/4k/8k Hz) | i2s | net | wifi reset | ?  status\n\n");
+           "  p  (sweep 250/500/1k/2k/4k/8k Hz) | i2s | bat | net | wifi reset | ?  status\n\n");
 }
 
 static void set_level(float db)
@@ -273,6 +282,9 @@ static void handle_line(char *line)
     } else if (!strcmp(cmd, "i2s")) {
         print_i2s_diag();
         return;
+    } else if (!strcmp(cmd, "bat")) {
+        print_battery();
+        return;
     } else if (!strcmp(cmd, "net")) {
         net_print_status();
         return;
@@ -280,6 +292,7 @@ static void handle_line(char *line)
         net_forget_wifi();
     } else if (!strcmp(cmd, "?")) {
         print_help();
+        print_battery();
         net_print_status();
     } else {
         LOG("ERR", "perintah tidak dikenal: \"%s\"  (ketik ? untuk bantuan)", line);
@@ -302,12 +315,16 @@ static void on_remote_command(const char *cmd)
 static void send_status(void)
 {
     static uint32_t seq;
-    char js[256];
+    char js[320];
     int n = snprintf(js, sizeof(js),
         "{\"type\":\"audio_test\",\"device\":\"%s\",\"seq\":%lu,\"uptime_ms\":%lld,"
-        "\"on\":%s,\"freq\":%.1f,\"level_dbfs\":%.1f,\"ch\":\"%s\"}",
+        "\"on\":%s,\"freq\":%.1f,\"level_dbfs\":%.1f,\"ch\":\"%s\"",
         NET_DEVICE_ID, (unsigned long)seq++, esp_timer_get_time() / 1000,
         g_on ? "true" : "false", g_freq, g_level_db, ch_name(g_channel));
+    int mv, pct;
+    if (battery_get(&mv, &pct))
+        n += snprintf(js + n, sizeof(js) - n, ",\"bat_mv\":%d,\"bat_pct\":%d", mv, pct);
+    n += snprintf(js + n, sizeof(js) - n, "}");
     net_ws_send(js, n);
 }
 
@@ -329,6 +346,7 @@ static void console_task(void *arg)
             send_status();
         }
         net_log_flush();
+        battery_poll();
 
         int ch = fgetc(stdin);
         if (ch == EOF) {
@@ -363,6 +381,7 @@ void app_main(void)
     remote_q = xQueueCreate(4, 64);
 
     i2s_init();
+    battery_init();
     xTaskCreatePinnedToCore(audio_task,   "audio",   4096, NULL, 10, NULL, 0);
     xTaskCreatePinnedToCore(console_task, "console", 4096, NULL, 2,  NULL, 1);
 

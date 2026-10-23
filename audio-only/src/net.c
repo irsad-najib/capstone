@@ -304,17 +304,62 @@ static void dns_task(void *arg)
 /* ------------------------------------------------------------------ */
 /*  Portal HTTP                                                        */
 /* ------------------------------------------------------------------ */
+/* Tema sama dengan dashboard Neurosound (frontend/src/app/globals.css):
+ * token terang + gelap mengikuti prefers-color-scheme HP. Font sistem karena
+ * portal dibuka tanpa internet. */
 static const char PAGE_HEAD[] =
-    "<!doctype html><html><head><meta charset=utf-8>"
+    "<!doctype html><html lang=id><head><meta charset=utf-8>"
     "<meta name=viewport content='width=device-width,initial-scale=1'>"
-    "<title>ESP32 Setup</title><style>"
-    "body{font-family:sans-serif;background:#0f172a;color:#e2e8f0;margin:0;padding:16px}"
-    ".c{max-width:420px;margin:auto}h2{margin:.2em 0}p{color:#94a3b8}"
-    "button,input{width:100%;box-sizing:border-box;padding:12px;margin:4px 0;"
-    "border-radius:8px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;font-size:16px}"
-    "button.n{text-align:left}button.s{background:#2563eb;border:0;margin-top:12px}"
-    "</style></head><body><div class=c><h2>ESP32 Audio Test</h2>"
-    "<p>Pilih WiFi untuk konek ke capstone.irsad.site</p>";
+    "<meta name=color-scheme content='light dark'>"
+    "<title>Neurosound Setup</title><style>"
+    ":root{--bg:#faf9fb;--card:#fff;--low:#f4f3f5;--line:#c3c7cd;--tx:#1b1c1d;--mu:#43474c;"
+    "--pri:#032034;--onpri:#fff;--sec:#366850;--secbg:#b8efd1;--ring:rgba(3,32,52,.15)}"
+    "@media(prefers-color-scheme:dark){:root{--bg:#121315;--card:#1b1c1e;--low:#1f2022;--line:#43474c;"
+    "--tx:#e3e2e4;--mu:#c3c7cd;--pri:#b0c9e4;--onpri:#19324a;--sec:#9dd2b5;--secbg:#1e5039;--ring:rgba(176,201,228,.2)}}"
+    "*{box-sizing:border-box}"
+    "body{margin:0;background:var(--bg);color:var(--tx);"
+    "font:15px/1.5 system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;-webkit-text-size-adjust:100%}"
+    "main{max-width:420px;margin:0 auto;padding:28px 16px 40px}"
+    ".brand{display:flex;align-items:center;gap:10px;margin-bottom:28px;color:var(--mu);font-size:14px}"
+    ".brand svg{width:28px;height:28px}.brand b{color:var(--tx);font-weight:600}"
+    "h1{font-size:24px;line-height:1.25;font-weight:600;letter-spacing:-.01em;margin:0 0 6px}"
+    ".lead{color:var(--mu);margin:0 0 24px}"
+    ".hd{display:flex;justify-content:space-between;align-items:baseline;margin:0 0 8px}"
+    "h2{font-size:15px;font-weight:600;margin:0}"
+    "a{color:var(--pri);font-weight:500;text-decoration:none}"
+    ".list{background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden}"
+    ".net{display:flex;align-items:center;gap:12px;width:100%;min-height:52px;padding:12px 16px;"
+    "background:none;border:0;border-top:1px solid var(--line);color:inherit;font:inherit;text-align:left;cursor:pointer}"
+    ".net:first-child{border-top:0}"
+    ".net .n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}"
+    ".net[aria-pressed=true]{background:var(--low);box-shadow:inset 3px 0 0 var(--sec)}"
+    ".lock{width:14px;height:14px;fill:var(--mu);flex:none}"
+    ".bars{display:inline-flex;align-items:flex-end;gap:2px;height:14px;flex:none}"
+    ".bars i{width:3px;border-radius:1px;background:var(--line)}"
+    ".bars i:nth-child(1){height:4px}.bars i:nth-child(2){height:7px}"
+    ".bars i:nth-child(3){height:10px}.bars i:nth-child(4){height:14px}"
+    ".l1 i:nth-child(-n+1),.l2 i:nth-child(-n+2),.l3 i:nth-child(-n+3),.l4 i{background:var(--sec)}"
+    ".empty{padding:20px 16px;color:var(--mu)}"
+    ".note{color:var(--mu);font-size:13px;margin:8px 2px 28px}"
+    "label{display:block;font-size:14px;font-weight:500;margin:0 0 6px}"
+    ".f{margin-bottom:16px}.pw{position:relative}"
+    "input{width:100%;height:48px;padding:0 14px;font:inherit;color:var(--tx);background:var(--card);"
+    "border:1px solid var(--line);border-radius:10px;outline:none}"
+    "input:focus{border-color:var(--pri);box-shadow:0 0 0 3px var(--ring)}"
+    ".pw input{padding-right:84px}"
+    ".pw button{position:absolute;right:4px;top:4px;height:40px;padding:0 12px;background:none;border:0;"
+    "border-radius:8px;color:var(--pri);font:inherit;font-size:14px;font-weight:500;cursor:pointer}"
+    ".go{width:100%;height:48px;margin-top:8px;border:0;border-radius:10px;background:var(--pri);"
+    "color:var(--onpri);font:inherit;font-weight:600;cursor:pointer}"
+    ".go:disabled{opacity:.6}"
+    ":focus-visible{outline:2px solid var(--pri);outline-offset:2px}"
+    ".ok{display:flex;align-items:center;justify-content:center;width:44px;height:44px;border-radius:50%;"
+    "background:var(--secbg);color:var(--sec);font-size:22px;margin-bottom:16px}"
+    "</style></head><body><main>"
+    "<div class=brand><svg viewBox='0 0 32 32' aria-hidden=true><rect width=32 height=32 rx=8 fill='#1c354a'/>"
+    "<path d='M4 19L7 19L9 15L11 19.5L13 18L15 13L17 19L19 17L21 8L23.5 21L25.5 18L28 19' fill=none "
+    "stroke='#9dd2b5' stroke-width=1.8 stroke-linecap=round stroke-linejoin=round /></svg>"
+    "<span><b>Neurosound</b> perangkat audio</span></div>";
 
 static void html_escape(char *out, size_t out_sz, const char *in)
 {
@@ -384,28 +429,58 @@ static esp_err_t portal_root(httpd_req_t *req)
     httpd_resp_set_type(req, "text/html");
     httpd_resp_send_chunk(req, PAGE_HEAD, HTTPD_RESP_USE_STRLEN);
 
-    uint16_t count = scan_count;
-    char line[400], esc[100];
-    for (int i = 0; i < count; i++) {
+    httpd_resp_send_chunk(req,
+        "<h1>Sambungkan ke WiFi</h1>"
+        "<p class=lead>Perangkat butuh WiFi untuk terhubung ke capstone.irsad.site.</p>"
+        "<div class=hd><h2>Jaringan terdekat</h2><a href=/scan>Scan ulang</a></div>"
+        "<div class=list>", HTTPD_RESP_USE_STRLEN);
+
+    static const char LOCK[] =
+        "<svg class=lock viewBox='0 0 24 24' aria-label=terkunci><path d='M17 9h-1V7a4 4 0 0 0-8 0v2H7a2 2 0 0 0-2 2v8"
+        "a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2zm-7-2a2 2 0 0 1 4 0v2h-4z'/></svg>";
+    char line[720], esc[100];
+    int shown = 0;
+    for (int i = 0; i < scan_count; i++) {
         if (!recs[i].ssid[0]) continue;
+        /* SSID sama dari mesh/repeater: tampilkan sekali (hasil scan urut RSSI). */
+        bool dup = false;
+        for (int j = 0; j < i && !dup; j++) dup = !strcmp((char *)recs[j].ssid, (char *)recs[i].ssid);
+        if (dup) continue;
+
+        int rssi  = recs[i].rssi;
+        int level = rssi >= -55 ? 4 : rssi >= -67 ? 3 : rssi >= -78 ? 2 : 1;
         html_escape(esc, sizeof(esc), (const char *)recs[i].ssid);
         snprintf(line, sizeof(line),
-                 "<button class=n type=button onclick=\"document.getElementById('s').value=this.dataset.s\" "
-                 "data-s=\"%s\">%s &nbsp;<small>%d dBm</small></button>",
-                 esc, esc, recs[i].rssi);
+                 "<button class=net type=button aria-pressed=false data-s=\"%s\">"
+                 "<span class=n>%s</span>%s"
+                 "<span class='bars l%d' aria-label='sinyal %d dari 4'><i></i><i></i><i></i><i></i></span></button>",
+                 esc, esc, recs[i].authmode != WIFI_AUTH_OPEN ? LOCK : "", level, level);
         httpd_resp_send_chunk(req, line, HTTPD_RESP_USE_STRLEN);
+        shown++;
     }
-    if (count == 0)
-        httpd_resp_send_chunk(req, "<p>Tidak ada jaringan, isi SSID manual.</p>",
+    if (shown == 0)
+        httpd_resp_send_chunk(req, "<p class=empty>Belum ada WiFi terdeteksi. Scan ulang, atau ketik namanya di bawah.</p>",
                               HTTPD_RESP_USE_STRLEN);
 
     httpd_resp_send_chunk(req,
-        "<form method=post action=/save>"
-        "<input id=s name=ssid placeholder=SSID required maxlength=32>"
-        "<input name=pass type=password placeholder=Password maxlength=63>"
-        "<button class=s>Simpan &amp; restart</button></form>"
-        "<p><a href=/scan style='color:#93c5fd'>Scan ulang WiFi</a> "
-        "<small>(HP bisa terputus sebentar)</small></p></div></body></html>",
+        "</div><p class=note>Hanya WiFi 2.4 GHz. Scan ulang bisa memutus HP sebentar.</p>"
+        "<form method=post action=/save id=f>"
+        "<div class=f><label for=s>Nama WiFi</label>"
+        "<input id=s name=ssid required maxlength=32 autocomplete=off autocapitalize=none></div>"
+        "<div class=f><label for=p>Password</label><div class=pw>"
+        "<input id=p name=pass type=password maxlength=63 autocomplete=current-password>"
+        "<button type=button id=t aria-controls=p>Lihat</button></div></div>"
+        "<button class=go id=g>Simpan &amp; sambungkan</button></form></main>"
+        "<script>"
+        "var s=document.getElementById('s'),p=document.getElementById('p');"
+        "document.querySelectorAll('.net').forEach(function(b){b.onclick=function(){"
+        "document.querySelectorAll('.net').forEach(function(x){x.setAttribute('aria-pressed','false')});"
+        "b.setAttribute('aria-pressed','true');s.value=b.dataset.s;p.focus()}});"
+        "document.getElementById('t').onclick=function(){var h=p.type=='password';"
+        "p.type=h?'text':'password';this.textContent=h?'Sembunyikan':'Lihat'};"
+        "document.getElementById('f').onsubmit=function(){var g=document.getElementById('g');"
+        "g.disabled=true;g.textContent='Menyimpan…'};"
+        "</script></body></html>",
         HTTPD_RESP_USE_STRLEN);
     return httpd_resp_send_chunk(req, NULL, 0);
 }
@@ -450,12 +525,18 @@ static esp_err_t portal_save(httpd_req_t *req)
     save_creds(ssid, pass);
     LOG("PORTAL", "kredensial \"%s\" disimpan, restart 1 detik lagi", ssid);
 
-    char esc[100], page[sizeof(PAGE_HEAD) + 512];
+    char esc[100], page[640];
     html_escape(esc, sizeof(esc), ssid);
-    snprintf(page, sizeof(page), "%s<p>Tersimpan. ESP restart dan konek ke <b>%s</b>.</p>"
-             "</div></body></html>", PAGE_HEAD, esc);
+    snprintf(page, sizeof(page),
+             "<div class=ok aria-hidden=true>&#10003;</div>"
+             "<h1>Tersimpan</h1>"
+             "<p class=lead>Perangkat restart dan menyambung ke <b>%s</b>. Halaman ini boleh ditutup.</p>"
+             "<p class=note>Kalau gagal tersambung, WiFi ESP32-Setup muncul lagi dalam sekitar 15 detik. "
+             "Biasanya karena password salah ketik.</p></main></body></html>", esc);
     httpd_resp_set_type(req, "text/html");
-    httpd_resp_send(req, page, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, PAGE_HEAD, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, page, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, NULL, 0);
 
     static esp_timer_handle_t t;
     const esp_timer_create_args_t ta = { .callback = restart_cb, .name = "restart" };
