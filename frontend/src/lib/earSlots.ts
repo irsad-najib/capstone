@@ -76,6 +76,31 @@ export function thresholdOf(results: EarResult[]): number | null {
   return passed.length ? Math.min(...passed) : null;
 }
 
+/**
+ * Selisih latensi wave V kiri–kanan maksimum yang masih normal (ms). Tidak butuh
+ * kalibrasi dB: kedua telinga dites dengan alat dan level dB yang sama.
+ */
+export const INTERAURAL_V_MAX_MS = 0.4;
+
+export interface InterauralRow {
+  stim_db: number;
+  left: number;   // wave V, ms
+  right: number;
+  diff: number;   // kiri − kanan, ms
+  normal: boolean;
+}
+
+/** Wave V kiri vs kanan per level; hanya level yang kedua telinganya Pass. */
+export function interauralV(slots: EarSlots): InterauralRow[] {
+  const v = (r?: EarResult) => (r?.outcome === "Pass" ? r.wave_v_ms : undefined);
+  return slots.left.flatMap(l => {
+    const left = v(l), right = v(slots.right.find(r => r.stim_db === l.stim_db));
+    if (left == null || right == null) return [];
+    const diff = left - right;
+    return [{ stim_db: l.stim_db, left, right, diff, normal: Math.abs(diff) <= INTERAURAL_V_MAX_MS }];
+  });
+}
+
 function subscribe(l: () => void) {
   listeners.add(l);
   const onStorage = (e: StorageEvent) => {

@@ -13,7 +13,7 @@ import { useABRStream } from "@/hooks/useABRStream";
 import { useBackend } from "@/hooks/useBackend";
 import { api, backendUrl, type ABRResult, type Ear } from "@/lib/api";
 import { MIN_TRIALS, SNR_GOOD_DB, formatAgo, outcomeOf, preStimMs, statusLabel, validWaves } from "@/lib/abr";
-import { addEarResult, clearEar, clearEarSlots, thresholdOf, useEarSlots, type EarResult } from "@/lib/earSlots";
+import { INTERAURAL_V_MAX_MS, addEarResult, clearEar, clearEarSlots, interauralV, thresholdOf, useEarSlots, type EarResult, type EarSlots } from "@/lib/earSlots";
 import { useSettings } from "@/lib/settings";
 import {
   MdAdd, MdPause, MdPersonAdd, MdPlayArrow, MdRefresh, MdRemove, MdSave, MdScience, MdStop,
@@ -357,6 +357,8 @@ export default function ScanPage() {
           ))}
         </section>
 
+        {done("left") && done("right") && <InterauralCard slots={slots} />}
+
         {/* ── Technical details (disembunyikan) ─────────────── */}
         <details className="group bg-surface-container-lowest border border-outline-variant/60 rounded-2xl">
           <summary className="cursor-pointer list-none px-5 py-4 flex items-center justify-between gap-3 text-sm">
@@ -469,6 +471,46 @@ export default function ScanPage() {
  * Satu telinga: gelombang tiap level ditumpuk dari yang paling keras (gaya
  * intensity series ABR), level yang sedang dites tampil live di atasnya.
  */
+/** Wave V kiri vs kanan di level yang sama. Selisih > 0.4 ms → curiga gangguan di satu sisi. */
+function InterauralCard({ slots }: { slots: EarSlots }) {
+  const rows = interauralV(slots);
+  const asym = rows.filter(r => !r.normal);
+  return (
+    <Card
+      title="Left vs right (wave V)"
+      description={`Same device and dB level on both ears, so no calibration is needed. A difference above ${INTERAURAL_V_MAX_MS} ms suggests a problem on one side.`}
+      action={rows.length > 0 && (
+        <span className={`text-sm font-semibold ${asym.length ? "text-error" : "text-secondary"}`}>
+          {asym.length ? "Asymmetric" : "Symmetric"}
+        </span>
+      )}
+      flush
+    >
+      {rows.length === 0 ? (
+        <p className="px-5 pb-5 text-sm text-on-surface-variant">No level has wave V (Pass) in both ears yet, so the ears cannot be compared.</p>
+      ) : (
+        <table className="w-full text-sm">
+          <thead><tr className="border-y border-outline-variant/50 text-xs text-on-surface-variant text-left">
+            <th className="px-5 py-2.5 font-medium">Level</th><th className="px-5 py-2.5 font-medium text-right">Left V (ms)</th><th className="px-5 py-2.5 font-medium text-right">Right V (ms)</th><th className="px-5 py-2.5 font-medium text-right">Difference</th>
+          </tr></thead>
+          <tbody className="divide-y divide-outline-variant/50 font-mono tabular-nums">
+            {rows.map(r => (
+              <tr key={r.stim_db}>
+                <td className="px-5 py-2.5 font-sans">{r.stim_db} dB</td>
+                <td className="px-5 py-2.5 text-right">{r.left.toFixed(2)}</td>
+                <td className="px-5 py-2.5 text-right">{r.right.toFixed(2)}</td>
+                <td className={`px-5 py-2.5 text-right font-semibold ${r.normal ? "text-secondary" : "text-error"}`}>
+                  {Math.abs(r.diff).toFixed(2)} ms{!r.normal && <span className="font-sans font-normal"> · {r.diff > 0 ? "left" : "right"} slower</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </Card>
+  );
+}
+
 function EarPanel({ ear, step, job, recording, results, live, ghost, target, canRetest, onRetest, waitingText }: {
   ear: Ear;
   step: number;
