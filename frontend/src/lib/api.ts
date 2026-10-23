@@ -57,6 +57,8 @@ export interface Analysis {
   waves?: WaveInfo[];
   interpeak_ms?: Record<string, number>;
   verdict?: string;
+  normal?: boolean;     // Pass + interpeak di rentang normal dewasa
+  reasons?: string[];   // alasan kalau normal = false
 }
 
 /** Status DSP backend: Noise (<100 trial) → Terbentuk → Konvergen (≥500 & r≥0.9) */
@@ -155,6 +157,7 @@ export interface DummyOptions {
   mains_uv?: number;
   no_response?: boolean;
   reset?: boolean;
+  random_start?: boolean; // rekaman saja: mulai dari sweep acak
 }
 
 export interface DummyWaveTruth {
@@ -187,6 +190,7 @@ export interface DummyStatus {
   stims: number;
   last_error?: string;
   recording?: DummyRecording;
+  start_sweep?: number;
 }
 
 export interface LogLine {

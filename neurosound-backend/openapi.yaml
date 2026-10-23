@@ -238,6 +238,7 @@ paths:
                 mains_uv: {type: number, default: 1.5}
                 no_response: {type: boolean, default: false, description: "Tanpa ABR → verdict Refer"}
                 reset: {type: boolean, default: true, description: "Reset rata-rata sebelum mulai"}
+                random_start: {type: boolean, default: false, description: "Rekaman saja — mulai dari sweep acak (indeksnya di status.start_sweep) supaya tiap play berbeda"}
       responses:
         "200":
           description: Berjalan (status generator)
@@ -416,7 +417,19 @@ components:
         interpeak_ms:
           type: object
           additionalProperties: {type: number}
-        verdict: {type: string}
+        verdict: {type: string, enum: [Pass, Refer]}
+        normal:
+          type: boolean
+          description: |
+            Klasifikasi ya/tidak. `true` kalau verdict Pass dan semua interpeak di dalam
+            rentang normal dewasa (mean ± 2 SD, click 85 dB nHL):
+            I-III 2.13 ± 0.14 (1.85–2.41 ms), III-V 1.85 ± 0.18 (1.49–2.21 ms),
+            I-V 3.98 ± 0.21 (3.56–4.40 ms). Norma dewasa, bukan bayi.
+        reasons:
+          type: array
+          items: {type: string}
+          description: Alasan kalau normal = false (kosong kalau normal)
+          example: ["interpeak I-V 4.62 ms di luar normal 3.56–4.40 ms"]
     Result:
       type: object
       properties:

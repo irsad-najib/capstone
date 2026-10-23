@@ -3,6 +3,7 @@
  * hasil, dan penyaringan gelombang. Aturan mengikuti neurosound-backend:
  *   - status DSP: Noise (<100 trial) → Terbentuk → Konvergen (≥500 & r≥0.9)
  *   - verdict: Pass jika Konvergen, SNR ≥ 3 dB, dan gelombang I/III/V terdeteksi
+ *   - normal: Pass dan interpeak I-III / III-V / I-V di rentang normal dewasa
  */
 import type { Analysis, WaveInfo } from "@/lib/api";
 
@@ -10,6 +11,30 @@ export const MIN_TRIALS     = 100;   // di bawah ini → Insufficient
 export const TARGET_TRIALS  = 500;   // backend butuh ≥500 untuk Konvergen
 export const SNR_GOOD_DB    = 3;
 export const WAVE_V_WINDOW  = [5.0, 7.5] as const; // ms, sama dengan waveBands backend
+
+/** Interpeak dewasa normal, click 85 dB nHL (mean ± SD ms). Sama dengan analysis.Norms backend. */
+export const INTERPEAK_NORMS: Record<string, { mean: number; sd: number }> = {
+  "I-III": { mean: 2.13, sd: 0.14 },
+  "III-V": { mean: 1.85, sd: 0.18 },
+  "I-V":   { mean: 3.98, sd: 0.21 },
+};
+
+/** Rentang normal = mean ± 2 SD. */
+export const normRange = (k: string): [number, number] => {
+  const n = INTERPEAK_NORMS[k];
+  return [n.mean - 2 * n.sd, n.mean + 2 * n.sd];
+};
+
+/** Normal ya/tidak. Pakai hasil backend; sesi lama / simulasi dihitung ulang dengan aturan yang sama. */
+export function normalOf(a?: Analysis): { normal: boolean; reasons: string[] } {
+  if (a?.normal != null) return { normal: a.normal, reasons: a.reasons ?? [] };
+  if (a?.verdict !== "Pass") return { normal: false, reasons: ["verdict Refer"] };
+  const reasons = Object.keys(INTERPEAK_NORMS).flatMap(k => {
+    const v = a.interpeak_ms?.[k] ?? 0, [lo, hi] = normRange(k);
+    return v < lo || v > hi ? [`interpeak ${k} ${v.toFixed(2)} ms di luar normal ${lo.toFixed(2)}–${hi.toFixed(2)} ms`] : [];
+  });
+  return { normal: reasons.length === 0, reasons };
+}
 
 /** Epoch backend dimulai pre_stim_ms sebelum stimulus. Sesi lama belum menyimpan field ini. */
 export function preStimMs(d: { pre_stim_ms?: number; epoch_ms?: number }): number {
@@ -78,7 +103,7 @@ export function statusLabel(status?: string): string {
 
 /**
  * Deteksi puncak untuk sesi lama yang belum punya `analysis`.
- * Sama dengan analysis.detectWaves di backend: |amplitudo| maksimum per jendela.
+ * Sama dengan analysis.detectWaves di backend: puncak positif maksimum per jendela.
  */
 export function detectWaves(avg: number[], fs: number, preMs: number): Analysis {
   const bands: [string, number, number][] = [["I", 1.0, 2.5], ["III", 3.5, 4.5], ["V", 5.0, 7.5]];
@@ -89,8 +114,8 @@ export function detectWaves(avg: number[], fs: number, preMs: number): Analysis 
     const end   = Math.min(avg.length - 1, offset + Math.floor((hi / 1000) * fs));
     if (start >= end) continue;
     let best = start;
-    for (let i = start + 1; i <= end; i++) if (Math.abs(avg[i]) > Math.abs(avg[best])) best = i;
-    if (avg[best] === 0) continue;
+    for (let i = start + 1; i <= end; i++) if (avg[i] > avg[best]) best = i;
+    if (avg[best] <= 0) continue;
     waves.push({ name, latency_ms: ((best - offset) / fs) * 1000, amplitude_uv: avg[best] });
   }
   const lat = Object.fromEntries(waves.map(w => [w.name, w.latency_ms]));

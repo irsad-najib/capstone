@@ -79,3 +79,28 @@ func TestDetectWavesIgnoresDeeperTrough(t *testing.T) {
 		}
 	}
 }
+
+func TestClassifyNormal(t *testing.T) {
+	cases := []struct {
+		name   string
+		peaks  map[float64]float64
+		status string
+		snr    float64
+		want   bool
+	}{
+		{"normal", map[float64]float64{1.6: 0.3, 3.7: 0.25, 5.6: 0.5}, "Konvergen", 6, true},
+		// I-V 5.0 ms (III-V 2.3 ms) → konduksi batang otak melambat.
+		{"I-V memanjang", map[float64]float64{1.6: 0.3, 4.3: 0.25, 6.6: 0.5}, "Konvergen", 6, false},
+		{"belum konvergen", map[float64]float64{1.6: 0.3, 3.7: 0.25, 5.6: 0.5}, "Terbentuk", 6, false},
+		{"tanpa respons", nil, "Konvergen", 0.5, false},
+	}
+	for _, c := range cases {
+		d := Compute(synth(800, c.peaks), fs, c.snr, c.status)
+		if d.Normal != c.want {
+			t.Errorf("%s: normal = %v, want %v (reasons %v, interpeak %v)", c.name, d.Normal, c.want, d.Reasons, d.Interpeak)
+		}
+		if !d.Normal && len(d.Reasons) == 0 {
+			t.Errorf("%s: tidak normal tapi tanpa alasan", c.name)
+		}
+	}
+}

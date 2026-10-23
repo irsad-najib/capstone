@@ -36,7 +36,9 @@ type Options struct {
 	NoiseUV    float64 `json:"noise_uv"`    // RMS noise EEG (synthetic saja)
 	MainsUV    float64 `json:"mains_uv"`    // amplitudo 50 Hz (synthetic saja)
 	NoResponse bool    `json:"no_response"` // tanpa ABR, simulasi tuli → Refer (synthetic saja)
-	Reset      bool    `json:"reset"`       // reset rata-rata sebelum mulai
+	// Rekaman saja: mulai dari sweep acak supaya tiap play merata-rata sweep yang berbeda.
+	RandomStart bool `json:"random_start"`
+	Reset       bool `json:"reset"` // reset rata-rata sebelum mulai
 }
 
 type Status struct {
@@ -47,7 +49,8 @@ type Status struct {
 	Stims     int     `json:"stims"`
 	LastError string  `json:"last_error,omitempty"`
 	// Diisi kalau sumbernya rekaman.
-	Recording *Recording `json:"recording,omitempty"`
+	Recording  *Recording `json:"recording,omitempty"`
+	StartSweep *int       `json:"start_sweep,omitempty"` // indeks sweep pertama yang diputar
 }
 
 type Generator struct {
@@ -101,6 +104,7 @@ func (g *Generator) Start(opt Options) error {
 
 	var src source
 	var rec *Recording
+	var startSweep *int
 	if opt.Source == SourceSynthetic {
 		src = newSynthetic(opt)
 	} else {
@@ -112,7 +116,11 @@ func (g *Generator) Start(opt Options) error {
 		if err != nil {
 			return err
 		}
-		src, rec = &replay{sig: sig}, r
+		k := 0
+		if opt.RandomStart && len(sig.Trig) > 0 {
+			k = rand.Intn(len(sig.Trig))
+		}
+		src, rec, startSweep = newReplay(sig, k), r, &k
 	}
 
 	g.mu.Lock()
@@ -123,7 +131,7 @@ func (g *Generator) Start(opt Options) error {
 	if opt.Reset {
 		g.proc.Reset()
 	}
-	g.status = Status{Running: true, Options: opt, StartedAt: time.Now().Format(time.RFC3339), Recording: rec}
+	g.status = Status{Running: true, Options: opt, StartedAt: time.Now().Format(time.RFC3339), Recording: rec, StartSweep: startSweep}
 	g.stop = make(chan struct{})
 	g.done = make(chan struct{})
 	stop, done := g.stop, g.done
@@ -194,6 +202,16 @@ func (s *synthetic) next() (float64, float64, bool) {
 type replay struct {
 	sig  *Signal
 	i, k int // indeks sampel dan indeks stimulus berikutnya
+}
+
+// newReplay mulai dari sweep ke-k. Sampel pertama di tengah jarak ke sweep
+// sebelumnya supaya epoch pertama tetap punya data pre-stimulus.
+func newReplay(sig *Signal, k int) *replay {
+	r := &replay{sig: sig}
+	if k > 0 && k < len(sig.Trig) {
+		r.i, r.k = (sig.Trig[k-1]+sig.Trig[k])/2, k
+	}
+	return r
 }
 
 func (r *replay) next() (float64, float64, bool) {

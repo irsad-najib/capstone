@@ -6,12 +6,12 @@ import ABRWaveformChart from "@/components/ABRWaveformChart";
 import { Button, ButtonLink, Card, Notice, Page, Stat, StatusDot, inputClass } from "@/components/ui";
 import { useBackend } from "@/hooks/useBackend";
 import { api, backendUrl, type DummyOptions, type DummyRecording } from "@/lib/api";
-import { formatAgo, formatDuration, statusLabel } from "@/lib/abr";
+import { formatAgo, formatDuration, normalOf, statusLabel } from "@/lib/abr";
 import { useSettings, writeSettings } from "@/lib/settings";
 import { MdArrowForward, MdOpenInNew, MdPlayArrow, MdRefresh, MdStop } from "react-icons/md";
 
 const SYNTHETIC = "synthetic";
-const DEFAULT_OPTS: Required<DummyOptions> = { source: SYNTHETIC, stims: 600, noise_uv: 4, mains_uv: 1.5, no_response: false, reset: true };
+const DEFAULT_OPTS: Required<DummyOptions> = { source: SYNTHETIC, stims: 600, noise_uv: 4, mains_uv: 1.5, no_response: false, reset: true, random_start: true };
 
 const recordingLabel = (r: DummyRecording) =>
   `${r.level_db ?? "?"} dB · ${r.sweeps.toLocaleString()} sweeps · ${Math.round(r.duration_s)} s`;
@@ -118,7 +118,7 @@ export default function AdminPage() {
                   <Stat label="Frames sent" value={st.frames.toLocaleString()} />
                   <Stat label="Stimuli sent" value={`${st.stims.toLocaleString()}${st.options.stims ? ` / ${st.options.stims}` : ""}`} />
                   <Stat label="Signal time" value={formatDuration(st.frames / 16000)} />
-                  <Stat label="Mode" value={st.recording ? `recording ${st.recording.level_db ?? "?"} dB` : st.options.no_response ? "synthetic, no response" : "synthetic, with ABR"} />
+                  <Stat label="Mode" value={st.recording ? `recording ${st.recording.level_db ?? "?"} dB${st.start_sweep ? ` from sweep ${st.start_sweep + 1}` : ""}` : st.options.no_response ? "synthetic, no response" : "synthetic, with ABR"} />
                 </dl>
               )}
               {st?.running && st.started_at && <p className="text-xs text-on-surface-variant">Started {formatAgo(st.started_at)}.</p>}
@@ -150,6 +150,7 @@ export default function AdminPage() {
                   <input type="number" min={0} step={0.5} value={opts.mains_uv} onChange={num("mains_uv")} disabled={!isSynthetic} className={`${inputClass} px-2 font-mono`} />
                 </label>
                 <label className="col-span-3 flex items-center gap-2"><input type="checkbox" className="accent-primary" checked={opts.no_response} disabled={!isSynthetic} onChange={e => setOpts(o => ({ ...o, no_response: e.target.checked }))} />No ABR response (should end as Refer)</label>
+                <label className="col-span-3 flex items-center gap-2"><input type="checkbox" className="accent-primary" checked={opts.random_start} disabled={isSynthetic} onChange={e => setOpts(o => ({ ...o, random_start: e.target.checked }))} />Start from a random sweep (different result each play)</label>
                 <label className="col-span-3 flex items-center gap-2"><input type="checkbox" className="accent-primary" checked={opts.reset} onChange={e => setOpts(o => ({ ...o, reset: e.target.checked }))} />Reset the running average first</label>
               </fieldset>
 
@@ -171,12 +172,16 @@ export default function AdminPage() {
           <Card title="Current average" className="lg:col-span-3" action={<ButtonLink href="/scan" variant="ghost" size="sm">Open live scan<MdArrowForward /></ButtonLink>}>
             {r ? (
               <div className="space-y-4">
-                <dl className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <dl className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                   <Stat label="Trials" value={r.trial_count.toLocaleString()} />
                   <Stat label="Status" value={statusLabel(r.status ?? r.quality)} />
                   <Stat label="SNR Ch 1" value={`${(r.snr?.[0] ?? 0).toFixed(1)} dB`} />
                   <Stat label="Verdict" value={r.analysis?.verdict ?? "—"} />
+                  <Stat label="Normal" value={normalOf(r.analysis).normal ? "Yes" : "No"} tone={normalOf(r.analysis).normal ? "good" : "bad"} />
                 </dl>
+                {normalOf(r.analysis).reasons.length > 0 && (
+                  <p className="text-xs text-on-surface-variant">Not normal: {normalOf(r.analysis).reasons.join("; ")}</p>
+                )}
                 <ABRWaveformChart data={r} range={[0, 10]} height={240} />
               </div>
             ) : (

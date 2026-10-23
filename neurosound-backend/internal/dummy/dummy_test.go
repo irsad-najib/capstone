@@ -71,6 +71,25 @@ func TestReplayStopsAfterRequestedStims(t *testing.T) {
 	}
 }
 
+// Mulai dari sweep ke-k: stimulus pertama = Trig[k], lalu sisanya dan berulang dari awal.
+func TestReplayStartsAtSweep(t *testing.T) {
+	sig := &Signal{UV: make([]float32, 3000), Trig: []int{200, 1200, 2200}}
+	src := newReplay(sig, 1)
+	if src.i != 700 {
+		t.Fatalf("sampel awal = %d, want 700 (tengah sweep 0 dan 1)", src.i)
+	}
+	var stims []int
+	for i := 0; i < 4000; i++ {
+		if _, _, stim := src.next(); stim {
+			stims = append(stims, i)
+		}
+	}
+	// 1200-700, 2200-700, lalu ulang: 3000-700+200, +1000
+	if want := []int{500, 1500, 2500, 3500}; fmt.Sprint(stims) != fmt.Sprint(want) {
+		t.Fatalf("stimulus di %v, want %v", stims, want)
+	}
+}
+
 func TestParseSignal(t *testing.T) {
 	var b bytes.Buffer
 	b.WriteString(fmt.Sprintf(`{"fs":%d,"n":3,"trig":[1]}`+"\n", processor.Fs))

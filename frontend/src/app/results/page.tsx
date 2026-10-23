@@ -8,7 +8,7 @@ import { Button, ButtonLink, Card, Footer, OutcomeChip, Page, Row, Segmented, St
 import { useBackend } from "@/hooks/useBackend";
 import { api, type SessionDetail, type Snapshot } from "@/lib/api";
 import {
-  OUTCOME_INFO, SNR_GOOD_DB, detectWaves, downloadJSON, outcomeOf, preStimMs, validWaves,
+  INTERPEAK_NORMS, OUTCOME_INFO, SNR_GOOD_DB, detectWaves, downloadJSON, normRange, normalOf, outcomeOf, preStimMs, validWaves,
 } from "@/lib/abr";
 import { MdArrowBack, MdAutorenew, MdCloudOff, MdDownload, MdPictureAsPdf, MdReplay } from "react-icons/md";
 
@@ -57,6 +57,7 @@ function ResultsContent() {
   const waves = validWaves(analysis?.waves);
   const outcome = doc ? outcomeOf({ trial_count: doc.trial_count, status, verdict: analysis?.verdict }) : null;
   const chartData = doc ? { ...doc, pre_stim_ms: pre, analysis } : null;
+  const normal = normalOf(analysis);
 
   return (
     <>
@@ -174,11 +175,18 @@ function ResultsContent() {
                     )}
                   </Card>
 
-                  <Card title="Interpeak intervals" className="break-inside-avoid">
+                  <Card title="Interpeak intervals" description="Normal adult range (mean ± 2 SD, click 85 dB nHL) shown under each value." className="break-inside-avoid">
                     <dl className="grid grid-cols-3 gap-2">
-                      {["I-III", "III-V", "I-V"].map(k => (
-                        <Stat key={k} label={k.replace("-", "–")} value={waves.length && analysis?.interpeak_ms?.[k] != null ? `${analysis.interpeak_ms[k].toFixed(2)} ms` : "—"} />
-                      ))}
+                      {Object.keys(INTERPEAK_NORMS).map(k => {
+                        const v = waves.length ? analysis?.interpeak_ms?.[k] : undefined;
+                        const [lo, hi] = normRange(k);
+                        return (
+                          <div key={k} className="space-y-1">
+                            <Stat label={k.replace("-", "–")} value={v != null ? `${v.toFixed(2)} ms` : "—"} tone={v == null ? undefined : v >= lo && v <= hi ? "good" : "bad"} />
+                            <p className="px-1 text-xs text-on-surface-variant font-mono">{lo.toFixed(2)}–{hi.toFixed(2)} ms</p>
+                          </div>
+                        );
+                      })}
                     </dl>
                   </Card>
 
@@ -205,12 +213,14 @@ function ResultsContent() {
                     <Row label="Ear" mono={false} value={doc.ear ? (doc.ear === "left" ? "Left" : "Right") : "—"} />
                     <Row label="Stimulus" mono={false} value={doc.stim_db ? `Tone burst, ${doc.stim_db} dB` : "—"} />
                     <Row label="Result" mono={false} value={<OutcomeChip outcome={outcome} />} />
+                    <Row label="Normal" mono={false} value={<span className={normal.normal ? "text-secondary font-semibold" : "text-error font-semibold"}>{normal.normal ? "Yes" : "No"}</span>} />
                     {doc.note && <Row label="Note" mono={false} value={doc.note} />}
                   </dl>
                 </Card>
                 <section className="rounded-2xl bg-surface-container-low p-5 text-sm text-on-surface-variant space-y-1.5">
                   <p className="font-semibold text-on-surface">How the result is decided</p>
                   <p>Pass requires status <em>Konvergen</em> (≥500 trials and r ≥ 0.9 between successive running averages), SNR ≥ {SNR_GOOD_DB} dB on Ch 1, and Wave I, III and V detected.</p>
+                  <p>Normal = Pass and every interpeak interval within the adult range above.{normal.reasons.length > 0 && <> Not normal because: {normal.reasons.join("; ")}.</>}</p>
                 </section>
               </aside>
             </div>
