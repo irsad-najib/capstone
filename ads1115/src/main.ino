@@ -138,14 +138,10 @@ static void i2sFlushSilence() {
 static void playClick(int db) {
     if (!i2sReady) return;
 
-    float scale;
-    switch (db) {
-        case 90: scale = 1.000f; break;
-        case 80: scale = 0.316f; break;
-        case 70: scale = 0.100f; break;
-        case 60: scale = 0.032f; break;
-        default: scale = 0.316f; break;
-    }
+    // 90 dB = skala penuh, tiap 20 dB turun = amplitudo ÷10 (80 → 0.316, 60 → 0.032, 40 → 0.003).
+    if (db > 90) db = 90;
+    if (db < 0)  db = 0;
+    float scale = powf(10.0f, (db - 90) / 20.0f);
 
     int16_t amp16 = (int16_t)(scale * 32767.0f);
     int32_t amp   = to32(amp16);
