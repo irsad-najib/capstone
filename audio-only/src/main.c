@@ -4,7 +4,7 @@
  *   IO32 → BCK, IO33 → LRCK, IO14 → DIN. SCK modul tidak dipakai
  *   (PCM5102A pakai PLL internal dari BCK).
  *
- * Rantai analog: DAC (2.1 Vrms @ 0 dBFS) → R 22k / R 47 (≈ -53.4 dB)
+ * Rantai analog: DAC (2.1 Vrms @ 0 dBFS) → R 22k / R 330 (≈ -36.6 dB)
  *   → trimpot RV1/RV3 → TDA1308 → jack PJ-320.
  *
  * Level diatur dalam dBFS (0 dBFS = sinus full scale). Gain digeser pelan
@@ -54,7 +54,7 @@
 #define SAMPLE_RATE     48000
 #define FRAMES_PER_BUF  240        /* 5 ms per blok */
 #define DAC_FS_VRMS     2.1f       /* PCM5102A, sinus 0 dBFS */
-#define DIVIDER_DB      (20.0f * log10f(47.0f / (22000.0f + 47.0f)))
+#define DIVIDER_DB      (20.0f * log10f(330.0f / (22000.0f + 330.0f)))
 #define RAMP_COEF       0.0021f    /* one-pole, τ ≈ 10 ms @ 48 kHz */
 #define TWO_PI          6.283185307179586
 #define PIN_BOOT        0
@@ -173,7 +173,7 @@ static void print_status(void)
         g_on ? "ON " : "OFF", g_freq, g_level_db, ch_name(g_channel));
     LOG("STATUS", "  DAC out  ≈ %.2f mVrms (%.1f dBV)",
         dac_vrms * 1000.0f, 20.0f * log10f(dac_vrms));
-    LOG("STATUS", "  setelah 22k/47 ≈ %.3f mVrms (%.1f dBV, pot maksimum)",
+    LOG("STATUS", "  setelah 22k/330 ≈ %.3f mVrms (%.1f dBV, pot maksimum)",
         dac_vrms * powf(10.0f, DIVIDER_DB / 20.0f) * 1000.0f,
         20.0f * log10f(dac_vrms) + DIVIDER_DB);
 }
@@ -376,7 +376,7 @@ void app_main(void)
     setvbuf(stdin, NULL, _IONBF, 0);
     net_log_init();
     printf("\n=== PCM5102A audio test ===\n");
-    LOG("INFO", "pembagi 22k/47 = %.1f dB, DAC full scale %.1f Vrms", DIVIDER_DB, DAC_FS_VRMS);
+    LOG("INFO", "pembagi 22k/330 = %.1f dB, DAC full scale %.1f Vrms", DIVIDER_DB, DAC_FS_VRMS);
 
     remote_q = xQueueCreate(4, 64);
 
