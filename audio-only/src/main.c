@@ -15,7 +15,11 @@
  *   l <dBFS>          level (0..-120), mis. "l -20"
  *   +  / -            naik / turun 1 dB  (++ / -- = 10 dB)
  *   c L|R|B           channel kiri / kanan / dua-duanya
- *   on / off          nyalakan / matikan tone
+ *   on / off          nyalakan / matikan tone (off juga menghentikan burst berulang)
+ *   b [ms] [per_s]    tone burst di f & l saat ini: naik/turun 2 siklus, datar ms
+ *                     (default b 2000 = burst uji 2 s). per_s > 0 = berulang,
+ *                     mis. "b 0.5 20" = burst 2-1-2 di 2 kHz, 20 kali/detik
+ *   remote on|off     terima / abaikan perintah dari backend
  *   s [a b d t]       step level dari a ke b, langkah d dB, tiap t detik
  *                     (default: s 0 -60 10 5). "s" lagi untuk berhenti
  *   p                 putar frekuensi audiometri 250..8000 Hz, 3 detik tiap step
@@ -58,6 +62,9 @@
 #define RAMP_COEF       0.0021f    /* one-pole, τ ≈ 10 ms @ 48 kHz */
 #define TWO_PI          6.283185307179586
 #define PIN_BOOT        0
+/* Batas atas level. Turunkan setelah level maksimum aman diketahui (lab/SLM),
+ * sebelum driver dipasang ke telinga orang. */
+#define LEVEL_MAX_DBFS  0.0f
 #define STATUS_PERIOD_US 5000000
 
 
@@ -65,9 +72,20 @@ enum { CH_L = 1, CH_R = 2, CH_B = 3 };
 
 /* Ditulis task konsol, dibaca task audio. Float/int 32-bit → aman tanpa lock. */
 static volatile float g_freq     = 1000.0f;
-static volatile float g_level_db = -20.0f;
+static volatile float g_level_db = -40.0f;
 static volatile int   g_channel  = CH_B;
 static volatile bool  g_on       = true;
+
+/* Burst: task konsol mengisi parameter lalu menaikkan g_burst_seq. Task audio
+ * memainkannya dengan selubung sendiri (naik/turun 2 siklus, sin²) dan TANPA
+ * ramp gain, jadi bagian datarnya tepat 10^(l/20) seperti tone kontinu. */
+static volatile uint32_t g_burst_seq;
+static volatile float    g_burst_flat_ms;
+static volatile float    g_burst_rate;    /* burst per detik, 0 = sekali */
+static volatile bool     g_burst_rep;     /* false → pengulangan berhenti */
+
+/* Perintah dari backend boleh dimatikan selama sesi pasien ("remote off"). */
+static volatile bool  g_remote_ok = true;
 
 /* Diagnostik I2S: frame terkirim, error write, dan sampel puncak per status. */
 static volatile uint32_t g_i2s_frames, g_i2s_errors;
@@ -110,16 +128,52 @@ static void audio_task(void *arg)
     (void)arg;
     double phase = 0.0;
     float  gain  = 0.0f;   /* gain aktual, mengejar target */
+    uint32_t burst_seen = g_burst_seq;
+    int32_t  bpos = -1;    /* posisi sampel di dalam burst, -1 = tidak ada burst */
+    int32_t  b_rise = 0, b_len = 0, b_period = 0;
 
     for (;;) {
-        float target = g_on ? powf(10.0f, g_level_db / 20.0f) : 0.0f;
+        float amp    = powf(10.0f, g_level_db / 20.0f);
+        float target = g_on ? amp : 0.0f;
         double step  = TWO_PI * g_freq / SAMPLE_RATE;
         int    ch    = g_channel;
 
+        if (g_burst_seq != burst_seen) {
+            burst_seen = g_burst_seq;
+            b_rise   = (int32_t)lroundf(2.0f * SAMPLE_RATE / g_freq);
+            if (b_rise < 1) b_rise = 1;
+            b_len    = 2 * b_rise + (int32_t)lroundf(g_burst_flat_ms * SAMPLE_RATE / 1000.0f);
+            b_period = g_burst_rate > 0.0f ? (int32_t)lroundf(SAMPLE_RATE / g_burst_rate) : 0;
+            if (b_period && b_period < b_len) b_period = b_len;
+            bpos  = 0;
+            phase = 0.0;
+            gain  = 0.0f;
+        }
+
         int32_t peak = 0;
         for (int i = 0; i < FRAMES_PER_BUF; i++) {
-            gain += (target - gain) * RAMP_COEF;
-            int32_t s = (int32_t)(sinf((float)phase) * gain * 2147483000.0f);
+            float g;
+            if (bpos >= 0) {
+                float env = 0.0f;
+                if (bpos < b_rise) {
+                    float x = sinf((float)M_PI_2 * bpos / b_rise);
+                    env = x * x;
+                } else if (bpos < b_len - b_rise) {
+                    env = 1.0f;
+                } else if (bpos < b_len) {
+                    float x = sinf((float)M_PI_2 * (b_len - bpos) / b_rise);
+                    env = x * x;
+                }
+                g = env * amp;
+                if (++bpos >= (b_period ? b_period : b_len)) {
+                    if (b_period && g_burst_rep) { bpos = 0; phase = 0.0; }
+                    else bpos = -1;
+                }
+            } else {
+                gain += (target - gain) * RAMP_COEF;
+                g = gain;
+            }
+            int32_t s = (int32_t)(sinf((float)phase) * g * 2147483000.0f);
             if (s > peak) peak = s;
             buf[2 * i]     = (ch & CH_L) ? s : 0;
             buf[2 * i + 1] = (ch & CH_R) ? s : 0;
@@ -182,12 +236,13 @@ static void print_help(void)
 {
     printf("\n  f <Hz> | l <dBFS> | + - ++ -- | c L/R/B | on | off\n"
            "  s [mulai akhir langkah detik]  (default s 0 -60 10 5)\n"
+           "  b [datar_ms] [per_detik]  (default b 2000 sekali) | remote on/off\n"
            "  p  (sweep 250/500/1k/2k/4k/8k Hz) | i2s | bat | net | wifi reset | ?  status\n\n");
 }
 
 static void set_level(float db)
 {
-    if (db > 0.0f)    db = 0.0f;
+    if (db > LEVEL_MAX_DBFS) db = LEVEL_MAX_DBFS;
     if (db < -120.0f) db = -120.0f;
     g_level_db = db;
 }
@@ -250,8 +305,31 @@ static void handle_line(char *line)
         else if (ch == 'R' || ch == 'r') g_channel = CH_R;
         else if (ch == 'B' || ch == 'b') g_channel = CH_B;
         else { LOG("ERR", "pakai c L / c R / c B"); return; }
-    } else if (!strcmp(cmd, "on"))  { g_on = true;
-    } else if (!strcmp(cmd, "off")) { g_on = false;
+    } else if (!strcmp(cmd, "on"))  { g_on = true; g_burst_rep = false;
+    } else if (!strcmp(cmd, "off")) { g_on = false; g_burst_rep = false;
+    } else if (!strcmp(cmd, "b")) {
+        float ms   = n >= 2 ? a : 2000.0f;
+        float rate = n >= 3 ? b : 0.0f;
+        if (ms < 0.0f || ms > 10000.0f || rate < 0.0f || rate > 100.0f) {
+            LOG("ERR", "b [datar_ms 0..10000] [burst_per_detik 0..100]");
+            return;
+        }
+        auto_mode       = AUTO_NONE;
+        g_on            = false;
+        g_burst_flat_ms = ms;
+        g_burst_rate    = rate;
+        g_burst_rep     = rate > 0.0f;
+        g_burst_seq++;
+        LOG("BURST", "%.0f Hz  %.1f dBFS  naik/turun %.2f ms  datar %.2f ms  %s",
+            g_freq, g_level_db, 2000.0f / g_freq, ms,
+            rate > 0.0f ? "berulang (off untuk berhenti)" : "sekali");
+        if (rate > 0.0f) LOG("BURST", "  %.1f burst/detik", rate);
+        return;
+    } else if (!strcmp(cmd, "remote")) {
+        if      (strstr(line, "off")) g_remote_ok = false;
+        else if (strstr(line, "on"))  g_remote_ok = true;
+        LOG("REMOTE", "perintah backend %s", g_remote_ok ? "diterima" : "diabaikan");
+        return;
     } else if (!strcmp(cmd, "s")) {
         if (auto_mode == AUTO_STEP && n == 1) {
             auto_mode = AUTO_NONE;
@@ -339,7 +417,10 @@ static void console_task(void *arg)
         auto_tick();
 
         char remote[64];
-        if (xQueueReceive(remote_q, remote, 0) == pdTRUE) handle_line(remote);
+        if (xQueueReceive(remote_q, remote, 0) == pdTRUE) {
+            if (g_remote_ok) handle_line(remote);
+            else LOG("REMOTE", "diabaikan: %s", remote);
+        }
 
         if (esp_timer_get_time() >= next_status) {
             next_status += STATUS_PERIOD_US;
