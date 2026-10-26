@@ -4,10 +4,15 @@ services:
     container_name: neurosound-backend
     restart: unless-stopped
     environment:
-      MONGO_URI: mongodb://mongo:27017
-      MONGO_DB: neurosound
+      # Default: mongod bawaan server (host). Isi MONGO_URI di .env, contoh:
+      #   MONGO_URI=mongodb://neurosound:PASS@host.docker.internal:27017/neurosound?authSource=neurosound
+      # Mongo container lama: MONGO_URI=mongodb://mongo:27017 + `docker compose --profile local-mongo up -d`
+      MONGO_URI: ${MONGO_URI:-mongodb://host.docker.internal:27017}
+      MONGO_DB: ${MONGO_DB:-neurosound}
       LOG_TOKEN: ${LOG_TOKEN:-}  # dari .env; kosong = /logs & perintah terbuka
       DUMMY_DIR: /app/dummy-data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       # hanya localhost; akses publik lewat nginx + Cloudflare Tunnel
       - "127.0.0.1:8080:8080"
@@ -15,16 +20,23 @@ services:
       - sessions:/app/data/sessions
       # rekaman dummy ABR (.npz + ground_truth.json) untuk replay dari halaman admin
       - ${DUMMY_HOST_DIR:-../../abr/dummy}:/app/dummy-data:ro
-    depends_on:
-      - mongo
 
   mongo:
     image: mongo:7
     container_name: neurosound-mongo
     restart: unless-stopped
+    profiles: [local-mongo]
     # tidak di-expose ke host (port 27017 host sudah dipakai mongod bawaan)
     volumes:
       - mongo-data:/data/db
+
+networks:
+  default:
+    # subnet tetap supaya rule firewall ke mongod host bisa sempit:
+    #   sudo ufw allow from 172.28.0.0/24 to any port 27017 proto tcp
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
 
 volumes:
   mongo-data:
