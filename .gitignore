@@ -40,7 +40,7 @@ get-platformio.py
 #  Go backend
 # ============================================================
 # binary hasil `go build` (nama folder = nama binary)
-backend/server
+archive/backend/server
 neurosound-backend/neurosound-backend
 /capstone
 # air live-reload
@@ -87,7 +87,7 @@ coverage/
 #  Data hasil rekaman / sesi (regenerate-able, bisa besar)
 # ============================================================
 data/
-backend/eeg_abr_*.json
+archive/backend/eeg_abr_*.json
 *.csv
 *.edf
 *.log
@@ -120,3 +120,6 @@ Dokuimen c-251/
 *.fdb_latexmk
 *.bbl
 *.blg
+
+# riwayat lokal KiCad (repo git sendiri)
+archive/schematic/.history/

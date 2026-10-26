@@ -158,3 +158,35 @@ func TestDetailCountsFrames(t *testing.T) {
 		t.Fatalf("frame_count=%d stim_count=%d, want 3 dan 1", r.FrameCount, r.StimCount)
 	}
 }
+
+func TestBinaryFrames(t *testing.T) {
+	proc, _, conn := newHubServer(t)
+	// 3 sampel: CH1 = 1, -1, 0x7FFFFF; CH2 = 2, -2, -0x800000; onset di sampel kedua.
+	msg := []byte{0xEE, 1, 3, 0, 0, 0, 0, 0, 0x40, 0x42, 0x0F, 0, 0, 0, 0, 0}
+	msg = append(msg,
+		0, 0x00, 0x00, 0x01, 0x00, 0x00, 0x02,
+		1, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFE,
+		0, 0x7F, 0xFF, 0xFF, 0x80, 0x00, 0x00,
+	)
+	if err := conn.WriteMessage(websocket.BinaryMessage, msg); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	r := waitRaw(t, proc, 3)
+	if !r.Stim[1] || r.Stim[0] || r.Stim[2] {
+		t.Fatalf("stim = %v", r.Stim)
+	}
+	want1 := []int32{1, -1, 0x7FFFFF}
+	want2 := []int32{2, -2, -0x800000}
+	for i := range want1 {
+		if r.Samples[0][i] != processor.RawADCToUV(want1[i]) || r.Samples[1][i] != processor.RawADCToUV(want2[i]) {
+			t.Fatalf("sampel %d = %v / %v", i, r.Samples[0][i], r.Samples[1][i])
+		}
+	}
+}
+
+func TestParseBinaryRejectsBadLength(t *testing.T) {
+	msg := []byte{0xEE, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+	if _, err := parseBinary(msg); err == nil {
+		t.Fatal("pesan terpotong harus ditolak")
+	}
+}

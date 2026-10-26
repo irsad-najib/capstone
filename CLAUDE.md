@@ -8,7 +8,9 @@ An ESP32-based EEG streaming system. The ESP32 reads brain signal data from an A
 
 ## Repository Layout
 
-- `Capstone/` — ESP32 firmware (PlatformIO/Arduino framework)
+- `esp/` — active ESP32 firmware (ESP-IDF via PlatformIO, env `esp32dev`): audio test, battery, WiFi portal, WSS
+- `archive/` — inactive history: `Capstone/`, `ads1115/`, `ads-only/`, `ads1299/`, `backend/`, `esp32-dummy.py`
+- `archive/Capstone/` — original ESP32 firmware (PlatformIO/Arduino framework), described below
   - `src/sketch-capstone-1.ino` — single-file firmware (all logic here for now)
   - `platformio.ini` — board: `upesy_wroom` (ESP32-WROOM-32U)
 - `main.go` / `go.mod` — Go WebSocket backend (single file, port 8080)

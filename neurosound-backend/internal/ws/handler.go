@@ -1,7 +1,9 @@
 package ws
 
 import (
+	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"sort"
@@ -34,6 +36,60 @@ func (c *client) write(msg []byte) error {
 	defer c.wmu.Unlock()
 	_ = c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 	return c.conn.WriteMessage(websocket.TextMessage, msg)
+}
+
+// rawFrame = satu sampel dari ESP32, baik dari JSON maupun dari pesan biner.
+type rawFrame struct {
+	Ch1  int32 `json:"ch1"`
+	Ch2  int32 `json:"ch2"`
+	TS   int64 `json:"ts"`
+	Stim bool  `json:"stim"`
+	T    int64 `json:"t"`
+	R    int32 `json:"r"`
+	S    int   `json:"s"`
+}
+
+// Pesan biner dari firmware esp/ (ADS1299), little-endian:
+//
+//	0  u8  0xEE   1 u8 versi (1)   2 u16 n sampel   4 u32 nomor urut sampel pertama
+//	8  u64 waktu sampel pertama (µs sejak boot)
+//	16 n × { u8 flag (bit0 = onset stimulus), i24 CH1 big-endian, i24 CH2 big-endian }
+const (
+	binMagic      = 0xEE
+	binVersion    = 1
+	binHeader     = 16
+	binSampleSize = 7
+	binFs         = 16000
+)
+
+func be24(b []byte) int32 {
+	v := int32(b[0])<<16 | int32(b[1])<<8 | int32(b[2])
+	return v << 8 >> 8
+}
+
+func parseBinary(raw []byte) ([]rawFrame, error) {
+	if len(raw) < binHeader || raw[0] != binMagic {
+		return nil, errors.New("header biner tidak dikenal")
+	}
+	if raw[1] != binVersion {
+		return nil, errors.New("versi biner tidak didukung")
+	}
+	n := int(binary.LittleEndian.Uint16(raw[2:4]))
+	if len(raw) != binHeader+n*binSampleSize {
+		return nil, errors.New("panjang pesan biner tidak cocok")
+	}
+	t0 := int64(binary.LittleEndian.Uint64(raw[8:16]))
+	frames := make([]rawFrame, n)
+	for i := range frames {
+		p := raw[binHeader+i*binSampleSize:]
+		frames[i] = rawFrame{
+			Ch1:  be24(p[1:4]),
+			Ch2:  be24(p[4:7]),
+			TS:   t0 + int64(i)*1_000_000/binFs,
+			Stim: p[0]&1 != 0,
+		}
+	}
+	return frames, nil
 }
 
 // DeviceStatus = status terakhir yang diketahui per device id.
@@ -205,21 +261,11 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	type rawFrame struct {
-		Ch1  int32 `json:"ch1"`
-		Ch2  int32 `json:"ch2"`
-		TS   int64 `json:"ts"`
-		Stim bool  `json:"stim"`
-		T    int64 `json:"t"`
-		R    int32 `json:"r"`
-		S    int   `json:"s"`
-	}
-
 	log.Printf("[ws] device connected: %s", deviceID)
 	var frameCount uint64
 	var lastLog time.Time
 	for {
-		_, raw, err := conn.ReadMessage()
+		mt, raw, err := conn.ReadMessage()
 		if err != nil {
 			log.Printf("[ws] device disconnected: %s: %v", deviceID, err)
 			h.Logs.Add(deviceID, "[server] disconnected: "+err.Error())
@@ -230,8 +276,17 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.touch(deviceID, time.Now())
 		h.mu.Unlock()
 
+		var frames []rawFrame
+		if mt == websocket.BinaryMessage {
+			frames, err = parseBinary(raw)
+			if err != nil {
+				log.Printf("[ws] bad binary from %s: %v (%d byte)", deviceID, err, len(raw))
+				continue
+			}
+		}
+
 		// Pesan bertipe ({"type":"log"}, {"type":"audio_test"}, ...) bukan data EEG.
-		if len(raw) > 0 && raw[0] == '{' {
+		if frames == nil && len(raw) > 0 && raw[0] == '{' {
 			var head struct {
 				Type string `json:"type"`
 			}
@@ -242,8 +297,9 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Support both single frame {...} and batch [{ ... }, ...]
-		var frames []rawFrame
-		if len(raw) > 0 && raw[0] == '[' {
+		if frames != nil {
+			// sudah dari pesan biner
+		} else if len(raw) > 0 && raw[0] == '[' {
 			if err := json.Unmarshal(raw, &frames); err != nil {
 				log.Printf("[ws] bad batch from %s: %v | raw: %s", deviceID, err, raw)
 				continue
@@ -264,7 +320,11 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		st.lastFrame = st.lastSeen
 		h.mu.Unlock()
 		if now := time.Now(); now.Sub(lastLog) >= time.Second {
-			log.Printf("[ws] %s | frame #%d (+%d/msg) | last: %s", deviceID, frameCount, len(frames), raw)
+			if mt == websocket.BinaryMessage {
+				log.Printf("[ws] %s | frame #%d (+%d/msg, biner)", deviceID, frameCount, len(frames))
+			} else {
+				log.Printf("[ws] %s | frame #%d (+%d/msg) | last: %s", deviceID, frameCount, len(frames), raw)
+			}
 			lastLog = now
 		}
 

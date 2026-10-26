@@ -35,14 +35,22 @@ gelombang **Wave V** muncul dan bisa dibaca di dashboard web.
 | --- | --- | --- |
 | `neurosound-backend/` | **Backend utama.** Go + worker Python DSP, MongoDB opsional, REST + SSE + WebSocket | aktif |
 | `frontend/` | **Dashboard utama.** Next.js 16 + React 19 + Tailwind 4 | aktif |
-| `ads1115/` | **Firmware aktif.** ESP32 + ADS1115, akuisisi + stimulus + streaming WS | aktif |
-| `backend/` | Backend generasi pertama (Go). Referensi pipeline ABR awal | arsip |
-| `Capstone/` | Firmware awal — WiFi provisioning, captive portal, I2S audio | arsip |
-| `ads-only/` | Eksperimen ESP-IDF: driver ADS1299 murni (C), tanpa Arduino | arsip |
-| `ads1299/` | Iterasi ADS1299 di PlatformIO/Arduino + datasheet & catatan wiring | arsip |
-| `capstone-3d/` | Model enclosure headphone (Blender). Script generator + render preview | aktif |
-| `sim-*.html`, `ws-frame-simulation.html` | Simulasi interaktif di browser: Butterworth, tone burst, epoching, SNR/Pearson, evolusi ABR | — |
-| `esp32-dummy.py` | Simulator ESP32 — kirim frame WS palsu tanpa hardware | — |
+| `esp/` | **Firmware aktif.** ESP-IDF: ADS1299 16 kSPS (CH1 Cz-A1, CH2 Cz-A2) + stimulus ABR tersinkron, mode tes audio, baterai, WiFi AP + captive portal, WSS ke backend | aktif |
+| `archive/` | Kode lama yang sudah tidak dipakai, disimpan sebagai riwayat (lihat bawah) | arsip |
+| `schematic-fix/` | **Skematik final** Board 1 (analog, ADS1299) dan Board 2 (digital, ESP32 + PCM5102A) | aktif |
+| `3d-new/` | Model 3D enclosure terbaru (Blender + Bambu) | aktif |
+| `Dokumen/` | Laporan LaTeX terbaru (tidak di-push) | aktif |
+| `archive/ads1115/` | Firmware ABR ESP32 + ADS1115, akuisisi + stimulus + streaming WS | arsip |
+| `archive/backend/` | Backend generasi pertama (Go). Referensi pipeline ABR awal | arsip |
+| `archive/Capstone/` | Firmware awal — WiFi provisioning, captive portal, I2S audio | arsip |
+| `archive/ads-only/` | Eksperimen ESP-IDF: driver ADS1299 murni (C), tanpa Arduino | arsip |
+| `archive/ads1299/` | Iterasi ADS1299 di PlatformIO/Arduino + datasheet & catatan wiring | arsip |
+| `archive/esp32-dummy.py` | Simulator ESP32 — kirim frame WS palsu tanpa hardware | arsip |
+| `archive/html/` | `index.html`, `sim-*.html`, `ws-frame-simulation.html`: simulasi interaktif (Butterworth, tone burst, epoching, SNR/Pearson, evolusi ABR) | arsip |
+| `archive/capstone-3d/` | Model enclosure headphone lama (Blender) + script generator | arsip |
+| `archive/schematic/` | Rebuild KiCad ESP-EEG v1 (Cerelog), bukan desain board yang dipakai | arsip |
+| `archive/c251/` | Versi lama laporan LaTeX (10 Agustus); versi terbaru di `Dokumen/` | arsip |
+| `archive/data/` | Rekaman sesi lama | arsip |
 | `PROMPT_BAB*.md` | Draft/outline bab laporan | — |
 
 > Beberapa folder sengaja **tidak** ikut ke repo ini — lihat [Yang tidak di-push](#yang-tidak-di-push).
@@ -82,28 +90,30 @@ Default backend URL sudah `http://localhost:8080`, jadi tidak perlu env tambahan
 ### 3. Tanpa hardware? Pakai simulator
 
 ```bash
-python esp32-dummy.py       # nyambung ke ws://localhost:8080/ws sebagai device palsu
+python archive/esp32-dummy.py       # nyambung ke ws://localhost:8080/ws sebagai device palsu
 ```
 
 ### 4. Firmware ESP32
 
 ```bash
-cd ads1115
-pio run                                    # build
-pio run --target upload                    # flash
-pio device monitor --baud 115200           # serial monitor
+cd esp
+pio run -e esp32dev                        # build
+pio run -e esp32dev -t upload              # flash
+pio device monitor -b 115200               # serial monitor (ketik ? untuk daftar perintah)
 ```
 
-Sebelum flash, set di bagian atas `src/main.ino`:
+Konfigurasi ada di `src/net.h` (`NET_DEVICE_ID`, `NET_WS_URI`). WiFi diisi lewat captive portal:
+tanpa kredensial tersimpan, device membuka AP `ESP32-Setup` / `12345678`, portal di `http://4.3.2.1/`.
 
-| Konstanta | Isi |
-| --- | --- |
-| `WS_HOST` | IP komputer yang menjalankan backend |
-| `WS_PORT` | `8080` |
-| `DEVICE_ID` | ID unik device, mis. `esp32-abr-001` |
+**Reset kredensial WiFi:** tahan tombol BOOT (GPIO 0) saat device menyala, atau ketik `wifi reset`.
 
-**Reset kredensial WiFi:** tahan tombol BOOT (GPIO 0) saat device menyala. Device akan
-masuk mode AP (`ESP32-Setup` / `12345678`) dengan captive portal di `192.168.4.1`.
+Saat boot firmware masuk mode **abr** kalau ADS1299 (Board 1) terdeteksi, selain itu mode **tone**
+(tes audio). Perintah serial utama: `abr`, `tone`, `on`/`off`, `db <dB>`, `st click|burst`, `rate`,
+`pol`, `ads` (status akuisisi), `ads test on` (sinyal uji internal), `?` (semua perintah).
+Sampel EEG dikirim sebagai pesan WebSocket biner (format di `esp/src/ads1299.h`).
+
+Pengukuran output audio pakai osiloskop: `esp/docs/ukur-osiloskop.md`.
+Firmware ABR lama (ADS1115) ada di `archive/ads1115/`.
 
 ---
 
@@ -134,17 +144,20 @@ masuk mode AP (`ESP32-Setup` / `12345678`) dengan captive portal di `192.168.4.1
 
 ---
 
-## Pin Hardware (ESP32-WROOM-32U)
+## Pin Hardware (firmware `esp/`, skematik Board 2)
 
 | Sinyal | GPIO |
 | --- | --- |
-| I2S BCLK | 26 |
-| I2S LRC | 25 |
-| I2S DOUT | 22 |
+| I2S BCK (PCM5102A) | 32 |
+| I2S LRCK | 33 |
+| I2S DIN | 14 |
+| Sensor baterai (R8 220k / R9 100k) | 35 |
+| ADS1299 MOSI / MISO / SCLK (lewat 33 Ω) | 23 / 19 / 18 |
+| ADS1299 CS_N / DRDY | 21 / 34 |
+| ADS1299 START / RESET_N / PWDN_N | 25 / 26 / 27 |
 | Tombol reset WiFi | 0 (BOOT) |
-| LED status | 2 |
 
-Wiring ADC lengkap ada di `ads1115/WIRING.md` dan `ads1299/Capstone/docs/`.
+Wiring ADC firmware lama ada di `archive/ads1115/WIRING.md` dan `archive/ads1299/Capstone/docs/`.
 
 ---
 
@@ -165,11 +178,11 @@ Sengaja di-`.gitignore` — kalau baru clone, jangan kaget kalau tidak ada:
 
 | Item | Alasan |
 | --- | --- |
-| `capstone-3d/*.blend` | ±190 MB per file, di atas hard limit GitHub 100 MB. Yang di-track: `build_headphone_v2.py` + render `docs/*.png`. Sumbernya disimpan terpisah. |
-| `Dokumen/`, `c251/` | Dokumen laporan LaTeX — berisi tanda tangan, laporan Turnitin, dan berkas administratif yang tidak layak publik. |
+| `archive/capstone-3d/*.blend` | ±190 MB per file, di atas hard limit GitHub 100 MB. Yang di-track: `build_headphone_v2.py` + render `docs/*.png`. Sumbernya disimpan terpisah. |
+| `Dokumen/`, `archive/c251/` | Dokumen laporan LaTeX — berisi tanda tangan, laporan Turnitin, dan berkas administratif yang tidak layak publik. |
 | `node_modules/`, `.next/`, `.venv/` | Dependensi & cache build, regenerate dengan `npm install` / `setup.sh`. |
 | `.pio/`, `*.elf`, `*.map`, `*.bin` | Artefak build PlatformIO. |
-| `backend/server`, `tmp/` | Binary hasil `go build` dan folder live-reload `air`. |
+| `archive/backend/server`, `tmp/` | Binary hasil `go build` dan folder live-reload `air`. |
 | `data/`, `*.csv`, `eeg_abr_*.json` | Data rekaman sesi. Bisa besar dan bukan source. |
 | `.env`, `*.pem`, `*.key` | Kredensial. `.env.example` tetap di-track sebagai template. |
 | `*.zip` | Arsip/backup, sudah ada versi ter-ekstraknya. |
