@@ -132,7 +132,7 @@ export default function AdminPage() {
                   <select value={opts.source} onChange={e => pickSource(e.target.value)} className={inputClass}>
                     <option value={SYNTHETIC}>Synthetic (generated)</option>
                     {recordings.length > 0 && (
-                      <optgroup label={`Server recordings${sources.data?.threshold_db != null ? ` (threshold ${sources.data.threshold_db} dB)` : ""}`}>
+                      <optgroup label={`Server recordings${recordings[0].storage === "mongodb" ? " · MongoDB" : " · folder"}${sources.data?.threshold_db != null ? ` (threshold ${sources.data.threshold_db} dB)` : ""}`}>
                         {recordings.map(r => <option key={r.file} value={r.file}>{recordingLabel(r)}</option>)}
                       </optgroup>
                     )}

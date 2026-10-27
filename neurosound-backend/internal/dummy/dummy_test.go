@@ -135,3 +135,15 @@ func TestLibraryRealRecordings(t *testing.T) {
 		t.Fatalf("path traversal: err = %v, want ErrUnknownFile", err)
 	}
 }
+
+func TestUploadValidation(t *testing.T) {
+	if _, err := NewLibrary("", "python3", "x").Upload(context.Background(), "a.npz", nil); err != ErrNoStore {
+		t.Fatalf("tanpa Mongo: err = %v, want ErrNoStore", err)
+	}
+	l := &Library{Store: &Mongo{}}
+	for _, name := range []string{"../x.npz", "a b.npz", "x.txt", "ground_truth.txt", ""} {
+		if _, err := l.Upload(context.Background(), name, nil); err != ErrBadName {
+			t.Errorf("%q: err = %v, want ErrBadName", name, err)
+		}
+	}
+}

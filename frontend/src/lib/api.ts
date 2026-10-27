@@ -172,6 +172,7 @@ export interface DummyRecording {
   sweeps: number;
   duration_s: number;
   ground_truth?: { waves: Record<string, DummyWaveTruth>; artifact_sweeps: number } | null;
+  storage?: "mongodb" | "dir"; // MongoDB GridFS atau folder DUMMY_DIR (cadangan)
 }
 
 export interface DummySources {

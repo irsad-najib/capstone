@@ -50,6 +50,14 @@ func NewStore(ctx context.Context, mongoURI, dbName, dir string) (*Store, error)
 	return s, nil
 }
 
+// Database mengembalikan database MongoDB (nil kalau Mongo tidak aktif).
+func (s *Store) Database() *mongo.Database {
+	if s.coll == nil {
+		return nil
+	}
+	return s.coll.Database()
+}
+
 // MongoEnabled = sesi juga disimpan ke MongoDB (bukan hanya file JSON).
 func (s *Store) MongoEnabled() bool { return s.client != nil }
 

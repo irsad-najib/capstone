@@ -2,15 +2,18 @@ package dummy
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -26,7 +29,13 @@ type Recording struct {
 	Sweeps      int             `json:"sweeps"`
 	DurationS   float64         `json:"duration_s"`
 	GroundTruth json.RawMessage `json:"ground_truth,omitempty"`
+	Storage     string          `json:"storage"` // StorageMongo atau StorageDir
 }
+
+const (
+	StorageMongo = "mongodb"
+	StorageDir   = "dir"
+)
 
 type Catalog struct {
 	Dir         string      `json:"dir"`
@@ -41,8 +50,10 @@ type Signal struct {
 }
 
 // Library membaca rekaman lewat dsp/dummy_npz.py (numpy/scipy sudah ada untuk DSP worker).
+// Sumber utama MongoDB (Store); folder Dir dipakai kalau Mongo kosong / tidak tersambung.
 type Library struct {
 	Dir, Python, Script string
+	Store               *Mongo
 
 	mu      sync.Mutex
 	catalog *Catalog
@@ -63,6 +74,21 @@ func (l *Library) Catalog(ctx context.Context) (*Catalog, error) {
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
+	var mongoErr error
+	if l.Store != nil {
+		c, err := l.Store.catalog(ctx)
+		if err == nil && len(c.Recordings) > 0 {
+			l.catalog = c
+			return c, nil
+		}
+		mongoErr = err
+	}
+	if l.Dir == "" {
+		if mongoErr != nil {
+			return nil, mongoErr
+		}
+		return &Catalog{Dir: "mongodb (gridfs: dummy)", Recordings: []Recording{}}, nil
+	}
 	out, err := exec.CommandContext(ctx, l.Python, l.Script, "--list", l.Dir).Output()
 	if err != nil {
 		return nil, fmt.Errorf("baca %s: %w%s", l.Dir, err, stderr(err))
@@ -72,6 +98,9 @@ func (l *Library) Catalog(ctx context.Context) (*Catalog, error) {
 		return nil, fmt.Errorf("daftar rekaman bukan JSON: %w", err)
 	}
 	c.Dir = l.Dir
+	for i := range c.Recordings {
+		c.Recordings[i].Storage = StorageDir
+	}
 	l.catalog = &c
 	return &c, nil
 }
@@ -97,7 +126,15 @@ func (l *Library) Load(file string) (*Signal, *Recording, error) {
 	if l.cached == file {
 		return l.signal, rec, nil
 	}
-	sig, err := l.read(filepath.Join(l.Dir, filepath.Base(file)))
+	var sig *Signal
+	if rec.Storage == StorageMongo {
+		var data []byte
+		if data, err = l.Store.open(file); err == nil {
+			sig, err = l.read("-", bytes.NewReader(data))
+		}
+	} else {
+		sig, err = l.read(filepath.Join(l.Dir, filepath.Base(file)), nil)
+	}
 	if err != nil {
 		return nil, nil, err
 	}
@@ -105,8 +142,10 @@ func (l *Library) Load(file string) (*Signal, *Recording, error) {
 	return sig, rec, nil
 }
 
-func (l *Library) read(path string) (*Signal, error) {
+// read menjalankan dummy_npz.py untuk path; path "-" = isi .npz dari stdin.
+func (l *Library) read(path string, stdin io.Reader) (*Signal, error) {
 	cmd := exec.Command(l.Python, l.Script, path, "--fs", fmt.Sprint(processor.Fs))
+	cmd.Stdin = stdin
 	cmd.Stderr = os.Stderr
 	pipe, err := cmd.StdoutPipe()
 	if err != nil {
@@ -123,6 +162,72 @@ func (l *Library) read(path string) (*Signal, error) {
 		return nil, perr
 	}
 	return sig, nil
+}
+
+var (
+	ErrNoStore  = errors.New("upload butuh MongoDB (MONGO_URI)")
+	ErrBadName  = errors.New("nama file harus <nama>.npz atau ground_truth.json (huruf, angka, . _ -)")
+	validName   = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+	MaxFileSize = int64(64 << 20)
+)
+
+// Upload menyimpan satu rekaman .npz (atau ground_truth.json) ke MongoDB.
+// Rekaman dengan nama sama diganti. Mengembalikan info rekaman (nil untuk ground truth).
+func (l *Library) Upload(ctx context.Context, name string, data []byte) (*Recording, error) {
+	if l.Store == nil {
+		return nil, ErrNoStore
+	}
+	if !validName.MatchString(name) || (name != groundTruthID+".json" && !strings.HasSuffix(name, ".npz")) {
+		return nil, ErrBadName
+	}
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+
+	if name == groundTruthID+".json" {
+		out, err := l.python(ctx, data, "--gt", "-")
+		if err != nil {
+			return nil, err
+		}
+		if err := l.Store.putGroundTruth(ctx, out); err != nil {
+			return nil, err
+		}
+		l.invalidate("")
+		return nil, nil
+	}
+
+	out, err := l.python(ctx, data, "--info", "-")
+	if err != nil {
+		return nil, err
+	}
+	rec := Recording{File: name, Storage: StorageMongo}
+	if err := json.Unmarshal(out, &rec); err != nil {
+		return nil, fmt.Errorf("info rekaman: %w", err)
+	}
+	if err := l.Store.putRecording(ctx, rec, data); err != nil {
+		return nil, err
+	}
+	l.invalidate(name)
+	return &rec, nil
+}
+
+func (l *Library) python(ctx context.Context, stdin []byte, args ...string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, l.Python, append([]string{l.Script}, args...)...)
+	cmd.Stdin = bytes.NewReader(stdin)
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("dummy_npz.py %s: %w%s", args[0], err, stderr(err))
+	}
+	return out, nil
+}
+
+// invalidate membuang cache daftar rekaman (dan sinyal file itu kalau sedang di-cache).
+func (l *Library) invalidate(file string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.catalog = nil
+	if file != "" && l.cached == file {
+		l.cached, l.signal = "", nil
+	}
 }
 
 // parseSignal membaca 1 baris header JSON lalu n float32 little-endian.

@@ -6,7 +6,10 @@ import (
 	_ "embed"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"log"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"strconv"
@@ -77,8 +80,17 @@ func main() {
 		start: time.Now(), stim: stimState{DB: defaultStimDB}}
 	a.hub = ws.NewHub(proc, abrSSE, rawSSE)
 	a.dummy = dummy.New(proc)
-	if dir := getenv("DUMMY_DIR", "../../abr/dummy"); dir != "" {
-		a.dummy.WithLibrary(dummy.NewLibrary(dir, pythonPath, getenv("DUMMY_SCRIPT", "dsp/dummy_npz.py")))
+	// Rekaman dummy: MongoDB (GridFS) dulu, folder DUMMY_DIR sebagai cadangan.
+	lib := dummy.NewLibrary(getenv("DUMMY_DIR", "../../abr/dummy"), pythonPath, getenv("DUMMY_SCRIPT", "dsp/dummy_npz.py"))
+	if db := store.Database(); db != nil {
+		if m, err := dummy.NewMongo(db); err != nil {
+			log.Printf("[dummy] gridfs: %v", err)
+		} else {
+			lib.Store = m
+		}
+	}
+	if lib.Dir != "" || lib.Store != nil {
+		a.dummy.WithLibrary(lib)
 	}
 
 	go a.tickStreams()
@@ -105,6 +117,7 @@ func main() {
 	mux.HandleFunc("/api/v1/dummy", a.auth(a.handleDummy))
 	mux.HandleFunc("/api/v1/dummy/sources", a.auth(a.handleDummySources))
 	mux.HandleFunc("/api/v1/dummy/start", a.auth(a.handleDummyStart))
+	mux.HandleFunc("/api/v1/dummy/upload", a.auth(a.handleDummyUpload))
 	mux.HandleFunc("/api/v1/dummy/stop", a.auth(a.handleDummyStop))
 	mux.HandleFunc("/api/v1/logs", a.auth(a.handleLogs))
 	mux.HandleFunc("/api/v1/logs/stream", a.auth(a.hub.Logs.ServeStream))
@@ -335,6 +348,61 @@ func (a *app) handleDummySources(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, out)
 }
 
+// handleDummyUpload: POST multipart, field "file" (boleh banyak): rekaman .npz
+// dan/atau ground_truth.json, disimpan ke MongoDB GridFS.
+func (a *app) handleDummyUpload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	lib := a.dummy.Library()
+	if lib == nil || lib.Store == nil {
+		writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": dummy.ErrNoStore.Error()})
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 4*dummy.MaxFileSize)
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": "multipart: " + err.Error()})
+		return
+	}
+	defer r.MultipartForm.RemoveAll()
+
+	uploaded := []map[string]any{}
+	failed := map[string]string{}
+	for _, fh := range r.MultipartForm.File["file"] {
+		data, err := readPart(fh)
+		if err == nil {
+			var rec *dummy.Recording
+			if rec, err = lib.Upload(r.Context(), fh.Filename, data); err == nil {
+				item := map[string]any{"file": fh.Filename, "size": len(data)}
+				if rec != nil {
+					item["level_db"], item["sweeps"] = rec.LevelDB, rec.Sweeps
+				}
+				uploaded = append(uploaded, item)
+				continue
+			}
+		}
+		failed[fh.Filename] = err.Error()
+	}
+	status := http.StatusOK
+	if len(uploaded) == 0 {
+		status = http.StatusBadRequest
+	}
+	writeJSONStatus(w, status, map[string]any{"ok": len(failed) == 0, "uploaded": uploaded, "errors": failed})
+}
+
+func readPart(fh *multipart.FileHeader) ([]byte, error) {
+	if fh.Size > dummy.MaxFileSize {
+		return nil, fmt.Errorf("file > %d MB", dummy.MaxFileSize>>20)
+	}
+	f, err := fh.Open()
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return io.ReadAll(f)
+}
+
 // handleDummyStart: POST {"source":"synthetic","stims":600,"noise_uv":4,"mains_uv":1.5,"no_response":false,"reset":true}
 // (semua field opsional; stims 0 = jalan terus sampai /dummy/stop). source boleh
 // nama file .npz dari /api/v1/dummy/sources untuk replay rekaman.
@@ -455,6 +523,12 @@ func (a *app) handleSessionDetail(w http.ResponseWriter, r *http.Request) {
 
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+func writeJSONStatus(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
 }
 

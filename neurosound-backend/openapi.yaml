@@ -193,8 +193,9 @@ paths:
       tags: [Dummy]
       summary: Daftar sumber dummy (synthetic + rekaman .npz di server)
       description: |
-        Rekaman dibaca dari `DUMMY_DIR` (default `abr/dummy`, hasil `abr/abr_dummy.py`)
-        beserta ground truth per level dari `ground_truth.json`.
+        Rekaman dibaca dari MongoDB GridFS (lihat `/dummy/upload`); kalau MongoDB kosong atau
+        tidak tersambung, dari folder `DUMMY_DIR` (default `abr/dummy`, hasil `abr/abr_dummy.py`).
+        Ground truth per level dari `ground_truth.json`. `storage` tiap rekaman: `mongodb` atau `dir`.
       security: [{logToken: []}, {logTokenQuery: []}]
       responses:
         "200":
@@ -248,6 +249,35 @@ paths:
           description: Rekaman tidak ditemukan
         "409":
           description: Dummy sudah berjalan
+  /api/v1/dummy/upload:
+    post:
+      tags: [Dummy]
+      summary: Upload rekaman dummy (.npz) / ground_truth.json ke MongoDB GridFS
+      description: |
+        Multipart, field `file` boleh diulang. File `.npz` (keluaran abr/abr_dummy.py, maks 64 MB)
+        disimpan utuh di GridFS bucket `dummy`, info-nya di collection `dummy_recordings`;
+        nama yang sama diganti. `ground_truth.json` diringkas per level ke `dummy_meta`.
+        Kalau MongoDB berisi rekaman, `/dummy/sources` memakai MongoDB; folder DUMMY_DIR hanya cadangan.
+        Contoh: `curl -H "X-Log-Token: …" -F file=@abr_dummy_80dB.npz -F file=@ground_truth.json …/api/v1/dummy/upload`
+      security: [{logToken: []}, {logTokenQuery: []}]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: array
+                  items: {type: string, format: binary}
+      responses:
+        "200":
+          description: Minimal satu file tersimpan
+          content:
+            application/json:
+              example: {ok: true, uploaded: [{file: abr_dummy_80dB.npz, size: 6791464, level_db: 80, sweeps: 2000}, {file: ground_truth.json, size: 12164}], errors: {}}
+        "400":
+          description: MongoDB tidak aktif, nama file salah, atau isi bukan .npz yang valid
   /api/v1/dummy/stop:
     post:
       tags: [Dummy]
