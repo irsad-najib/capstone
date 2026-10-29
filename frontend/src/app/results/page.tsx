@@ -49,7 +49,7 @@ function ResultsContent() {
 
   if (!filename) return null;
 
-  const fs = doc?.sampling_rate || 16000;
+  const fs = doc?.sampling_rate || 15000;
   const pre = doc ? preStimMs(doc) : 10;
   const status = doc?.status ?? doc?.quality;
   // Sesi lama tanpa `analysis`: hitung ulang dengan aturan yang sama dengan backend

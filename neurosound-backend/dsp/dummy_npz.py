@@ -2,7 +2,7 @@
 """Baca rekaman dummy ABR (.npz dari abr/abr_dummy.py) untuk replay di backend.
 
   dummy_npz.py --list DIR      -> JSON daftar rekaman + ground truth per level
-  dummy_npz.py FILE --fs 16000 -> 1 baris JSON header, lalu n float32 LE (µV)
+  dummy_npz.py FILE --fs 15000 -> 1 baris JSON header, lalu n float32 LE (µV)
   dummy_npz.py --info -        -> JSON info satu .npz dari stdin (untuk upload ke MongoDB)
   dummy_npz.py --gt -          -> ground_truth.json dari stdin, diringkas per level
 
@@ -94,7 +94,7 @@ def main():
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--info", action="store_true")
     ap.add_argument("--gt", action="store_true")
-    ap.add_argument("--fs", type=int, default=16000)
+    ap.add_argument("--fs", type=int, default=15000)
     a = ap.parse_args()
     if a.list:
         list_dir(a.path)

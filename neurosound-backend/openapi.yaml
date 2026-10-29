@@ -220,8 +220,8 @@ paths:
       tags: [Dummy]
       summary: Mulai data ABR dummy di server (sintetis atau replay rekaman)
       description: |
-        `source: "synthetic"` membangkitkan sinyal 16 kHz (Wave I/III/V di 1.6/3.7/5.6 ms + noise + 50 Hz).
-        `source: "<file>.npz"` memutar rekaman dari `/api/v1/dummy/sources` (di-resample ke 16 kHz,
+        `source: "synthetic"` membangkitkan sinyal 15 kHz (Wave I/III/V di 1.6/3.7/5.6 ms + noise + 50 Hz).
+        `source: "<file>.npz"` memutar rekaman dari `/api/v1/dummy/sources` (di-resample ke 15 kHz,
         diulang kalau `stims` melebihi jumlah sweep; noise_uv/mains_uv/no_response diabaikan).
         Sinyal masuk ke processor lewat jalur yang sama dengan frame ESP32.
         Kalau DSP lebih lambat dari real-time, generator ikut melambat.
@@ -469,7 +469,7 @@ components:
           items:
             type: array
             items: {type: number}
-        sampling_rate: {type: integer, example: 16000}
+        sampling_rate: {type: integer, example: 15000}
         epoch_ms: {type: number, example: 60}
         pre_stim_ms: {type: number, example: 10, description: "Bagian epoch sebelum stimulus; abr_average[i] ada di t = i/fs - pre_stim_ms"}
         stim_count: {type: integer, description: Jumlah penanda stimulus yang diterima sejak reset}

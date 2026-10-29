@@ -12,13 +12,24 @@ import (
 	"neurosound-backend/internal/session"
 )
 
+// Fs = laju sampel firmware esp-ads1256/ (ADS1256 DRATE 15 kSPS, satu kanal per sesi).
+// Pesan biner membawa laju sampelnya sendiri; yang tidak sama dengan Fs ditolak di ws.
 const (
-	Fs           = 16000
+	Fs           = 15000
 	EpochMs      = 60.0
 	PreStimMs    = 10.0
-	preSamples   = 160
-	postSamples  = 800
+	preSamples   = int(PreStimMs * Fs / 1000)
+	postSamples  = int((EpochMs - PreStimMs) * Fs / 1000)
 	epochSamples = preSamples + postSamples
+)
+
+// Rantai analog default: AD620 (gain AmpGain) → ADS1256 (VREF 2.5 V, PGA 1).
+// Skala penuh ADS1256 = ±2·VREF/PGA untuk kode ±2^23. Dipakai untuk frame JSON dan
+// generator dummy; pesan biner versi 2 membawa µV per LSB dari firmware.
+const (
+	ADCVref = 2.5
+	ADCPGA  = 1
+	AmpGain = 20.0
 )
 
 type Config struct {
@@ -86,14 +97,20 @@ func New(cfg Config, ring *buffer.RingBuffer, runner *dsp.Runner) *Processor {
 	}
 }
 
+// RawADCToUV mengubah kode ADC ke µV di elektroda dengan rantai analog default.
 func RawADCToUV(raw int32) float64 {
-	return float64(raw) * (2 * 4.5) / math.Pow(2, 24) / 24 * 1e6
+	return float64(raw) * (2 * ADCVref / ADCPGA) / math.Pow(2, 23) / AmpGain * 1e6
 }
 
 func (p *Processor) AddFrame(rawCh1, rawCh2 int32, ts int64, stim bool) (*Result, bool, error) {
+	return p.AddFrameScaled(rawCh1, rawCh2, RawADCToUV(1), ts, stim)
+}
+
+// AddFrameScaled sama dengan AddFrame, dengan µV per LSB dari firmware (PGA bisa diganti di ESP32).
+func (p *Processor) AddFrameScaled(rawCh1, rawCh2 int32, uvPerLSB float64, ts int64, stim bool) (*Result, bool, error) {
 	frame := p.ring.Push(buffer.Frame{
-		Ch1:  RawADCToUV(rawCh1),
-		Ch2:  RawADCToUV(rawCh2),
+		Ch1:  float64(rawCh1) * uvPerLSB,
+		Ch2:  float64(rawCh2) * uvPerLSB,
 		Raw1: rawCh1,
 		Raw2: rawCh2,
 		TS:   ts,
@@ -119,11 +136,11 @@ func (p *Processor) processReady(currentSeq int64) (*Result, bool, error) {
 		return nil, false, nil
 	}
 	stimSeq := p.pendingStims[0]
-	if currentSeq-stimSeq < postSamples-1 {
+	if currentSeq-stimSeq < int64(postSamples-1) {
 		return nil, false, nil
 	}
 	p.pendingStims = p.pendingStims[1:]
-	start := stimSeq - preSamples
+	start := stimSeq - int64(preSamples)
 	if start < 0 {
 		return nil, false, nil
 	}

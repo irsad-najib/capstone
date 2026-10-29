@@ -1,6 +1,8 @@
 package ws
 
 import (
+	"encoding/binary"
+	"math"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -159,11 +161,23 @@ func TestDetailCountsFrames(t *testing.T) {
 	}
 }
 
+// binV2 membangun pesan biner versi 2 (esp-ads1256/) dengan header 24 byte.
+func binV2(fs uint16, uv float32, samples ...byte) []byte {
+	msg := make([]byte, 24)
+	msg[0], msg[1] = 0xEE, 2
+	binary.LittleEndian.PutUint16(msg[2:], uint16(len(samples)/7))
+	binary.LittleEndian.PutUint64(msg[8:], 1_000_000)
+	binary.LittleEndian.PutUint16(msg[16:], fs)
+	msg[18], msg[19] = 1, 1
+	binary.LittleEndian.PutUint32(msg[20:], math.Float32bits(uv))
+	return append(msg, samples...)
+}
+
 func TestBinaryFrames(t *testing.T) {
 	proc, _, conn := newHubServer(t)
 	// 3 sampel: CH1 = 1, -1, 0x7FFFFF; CH2 = 2, -2, -0x800000; onset di sampel kedua.
-	msg := []byte{0xEE, 1, 3, 0, 0, 0, 0, 0, 0x40, 0x42, 0x0F, 0, 0, 0, 0, 0}
-	msg = append(msg,
+	const uv = 0.5
+	msg := binV2(processor.Fs, uv,
 		0, 0x00, 0x00, 0x01, 0x00, 0x00, 0x02,
 		1, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFE,
 		0, 0x7F, 0xFF, 0xFF, 0x80, 0x00, 0x00,
@@ -178,15 +192,39 @@ func TestBinaryFrames(t *testing.T) {
 	want1 := []int32{1, -1, 0x7FFFFF}
 	want2 := []int32{2, -2, -0x800000}
 	for i := range want1 {
-		if r.Samples[0][i] != processor.RawADCToUV(want1[i]) || r.Samples[1][i] != processor.RawADCToUV(want2[i]) {
+		if r.Samples[0][i] != float64(want1[i])*uv || r.Samples[1][i] != float64(want2[i])*uv {
 			t.Fatalf("sampel %d = %v / %v", i, r.Samples[0][i], r.Samples[1][i])
 		}
 	}
 }
 
+func TestParseBinaryTimestamps(t *testing.T) {
+	frames, err := parseBinary(binV2(processor.Fs, 1, make([]byte, 3*7)...))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if step := frames[1].TS - frames[0].TS; step != 1_000_000/processor.Fs {
+		t.Fatalf("selisih waktu sampel %d µs, want %d", step, 1_000_000/processor.Fs)
+	}
+}
+
+func TestParseBinaryRejectsWrongRate(t *testing.T) {
+	// Versi 1 = firmware ADS1299 16 kHz, tidak cocok dengan backend 15 kHz.
+	v1 := append([]byte{0xEE, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, make([]byte, 7)...)
+	if _, err := parseBinary(v1); err == nil {
+		t.Fatal("pesan v1 16 kHz harus ditolak")
+	}
+	if _, err := parseBinary(binV2(16000, 1, make([]byte, 7)...)); err == nil {
+		t.Fatal("pesan v2 dengan laju lain harus ditolak")
+	}
+	if _, err := parseBinary(binV2(processor.Fs, 0, make([]byte, 7)...)); err == nil {
+		t.Fatal("µV per LSB 0 harus ditolak")
+	}
+}
+
 func TestParseBinaryRejectsBadLength(t *testing.T) {
-	msg := []byte{0xEE, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
-	if _, err := parseBinary(msg); err == nil {
+	msg := binV2(processor.Fs, 1, make([]byte, 2*7)...)
+	if _, err := parseBinary(msg[:len(msg)-1]); err == nil {
 		t.Fatal("pesan terpotong harus ditolak")
 	}
 }

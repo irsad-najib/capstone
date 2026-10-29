@@ -6,7 +6,7 @@ import numpy as np
 from scipy.signal import butter, sosfiltfilt
 
 
-def init_sos(fs=16000, low=100, high=3000, order=2):
+def init_sos(fs=15000, low=100, high=3000, order=2):
     """Buat SOS coefficients Butterworth bandpass."""
     return butter(order, [low, high], btype="bandpass", fs=fs, output="sos")
 
@@ -71,7 +71,7 @@ def main():
     """Baca JSON dari stdin, proses DSP, print JSON ke stdout."""
     try:
         payload = json.load(sys.stdin)
-        fs = int(payload.get("fs", 16000))
+        fs = int(payload.get("fs", 15000))
         n_trials = int(payload.get("n_trials", 0)) + 1
 
         epoch_ch1 = _arr(payload["epoch_ch1"])

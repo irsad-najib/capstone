@@ -27,7 +27,7 @@ type RunMode = "both" | "single";
 interface Job { mode: RunMode; ear: Ear; levels: number[]; idx: number }
 
 const DB_MIN = 20, DB_MAX = 90, DB_STEP = 10;
-const EARS: Ear[] = ["left", "right"];
+const EARS: Ear[] = ["right", "left"];   // urutan tes: kanan dulu, lalu kiri
 const EAR_NAME: Record<Ear, string> = { left: "Left ear", right: "Right ear" };
 /** Abaikan target trial sebentar setelah reset: paket SSE lama bisa masih membawa hitungan lama. */
 const SETTLE_MS = 5000;
@@ -69,7 +69,7 @@ export default function ScanPage() {
   const [range, setRange]       = useState<Range>("abr");
   const [showCh2, setShowCh2]   = useState(false);
   const [showGhost, setShowGhost] = useState(true);
-  const [ear, setEar]           = useState<Ear>("left");
+  const [ear, setEar]           = useState<Ear>("right");
   const [job, setJob]           = useState<Job | null>(null);
   const [routeWarn, setRouteWarn] = useState(false);
   const [pendingDb, setPendingDb] = useState<number | null>(null);
@@ -103,7 +103,7 @@ export default function ScanPage() {
   const done     = (e: Ear) => slots[e].length > 0;
   const bothDone = done("left") && done("right");
   // Tes yang terhenti di tengah: lanjutkan telinga yang belum, tanpa menghapus hasil yang sudah ada.
-  const nextEar: Ear | null = !done("left") ? (done("right") ? "left" : null) : !done("right") ? "right" : null;
+  const nextEar: Ear | null = !done("right") ? (done("left") ? "right" : null) : !done("left") ? "left" : null;
 
   async function act<T>(kind: NonNullable<typeof busy>, fn: () => Promise<T>, ok?: (r: T) => string | void) {
     setBusy(kind);
@@ -161,7 +161,7 @@ export default function ScanPage() {
 
   function startTest() {
     clearEarSlots();
-    void beginLevel({ mode: "both", ear: "left", levels, idx: 0 });
+    void beginLevel({ mode: "both", ear: "right", levels, idx: 0 });
   }
 
   function testEar(e: Ear) {
@@ -206,7 +206,7 @@ export default function ScanPage() {
 
   function newPatient() {
     clearEarSlots();
-    setEar("left");
+    setEar("right");
     setMessage(null);
   }
 
@@ -238,8 +238,8 @@ export default function ScanPage() {
       const responded = result.outcome === "Pass";
       if (j.idx + 1 < j.levels.length && (responded || !settings.stopAtThreshold)) {
         await beginLevel({ ...j, idx: j.idx + 1 });
-      } else if (j.mode === "both" && j.ear === "left") {
-        await beginLevel({ ...j, ear: "right", idx: 0 });
+      } else if (j.mode === "both" && j.ear === "right") {
+        await beginLevel({ ...j, ear: "left", idx: 0 });
       } else {
         jobRef.current = null;
         setJob(null);
@@ -349,9 +349,9 @@ export default function ScanPage() {
               canRetest={isLive && !testing && !stimRunning}
               onRetest={() => testEar(e)}
               waitingText={
-                testing && job?.mode === "both" ? "Starts automatically after the left ear."
+                testing && job?.mode === "both" ? "Starts automatically after the right ear."
                   : nextEar === e ? "Press Continue to test this ear."
-                    : e === "left" ? "Starts when you press Start test." : "Starts automatically after the left ear."
+                    : e === "right" ? "Starts when you press Start test." : "Starts automatically after the right ear."
               }
             />
           ))}

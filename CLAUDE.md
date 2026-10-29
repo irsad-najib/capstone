@@ -9,6 +9,7 @@ An ESP32-based EEG streaming system. The ESP32 reads brain signal data from an A
 ## Repository Layout
 
 - `esp/` — active ESP32 firmware (ESP-IDF via PlatformIO, env `esp32dev`): audio test, battery, WiFi portal, WSS
+- `esp-ads1256/` — copy of `esp/` with `ads1299.c` replaced by `ads1256.c` (ADS1256 module + 2× AD620, one channel per session at 15 kSPS, binary packet v2). Backend `processor.Fs` = 15000 matches this firmware; `esp/` (v1, 16 kHz) is rejected by the backend
 - `archive/` — inactive history: `Capstone/`, `ads1115/`, `ads-only/`, `ads1299/`, `backend/`, `esp32-dummy.py`
 - `archive/Capstone/` — original ESP32 firmware (PlatformIO/Arduino framework), described below
   - `src/sketch-capstone-1.ino` — single-file firmware (all logic here for now)
@@ -95,13 +96,16 @@ Supported server→ESP32 commands:
 
 ## Hardware Pins
 
-| Signal    | GPIO |
-| --------- | ---- |
-| I2S BCLK  | 26   |
-| I2S LRC   | 25   |
-| I2S DOUT  | 22   |
-| RESET btn | 0    |
-| LED       | 2    |
+Active firmware `esp/` (Board 2 schematic). The old `archive/Capstone/` pins (I2S 26/25/22) no longer apply: GPIO 25/26 are now ADS1299 START/RESET.
+
+| Signal                         | GPIO |
+| ------------------------------ | ---- |
+| I2S BCK / LRCK / DIN (PCM5102A) | 32 / 33 / 14 |
+| ADS1299 SCLK / MISO / MOSI     | 18 / 19 / 23 |
+| ADS1299 CS_N / DRDY            | 21 / 34 |
+| ADS1299 START / RESET_N / PWDN_N | 25 / 26 / 27 |
+| Battery sense (R8 220k / R9 100k) | 35 |
+| WiFi reset (BOOT)              | 0    |
 
 ## Coding Constraints
 

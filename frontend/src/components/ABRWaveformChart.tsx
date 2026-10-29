@@ -30,7 +30,7 @@ export default function ABRWaveformChart({
   data, channels = [0], ghost = null, range = [0, 10], height = 280, compact = false,
 }: Props) {
   const ref = useCanvas((ctx, W, H, color) => {
-    const fs = data.sampling_rate || 16000;
+    const fs = data.sampling_rate || 15000;
     const pre = preStimMs(data);
     const [t0, t1] = range;
     const PAD = compact ? { l: 34, r: 8, t: 8, b: 18 } : { l: 52, r: 14, t: 18, b: 30 };

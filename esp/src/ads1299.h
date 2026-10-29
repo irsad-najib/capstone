@@ -61,6 +61,16 @@ void ads_print_status(void);
  * data sinyal uji) dengan log tiap langkah ([CHECK]). Akuisisi dihentikan sementara. */
 void ads_check(void);
 
+/* Uji DRDY rinci: level dan tepi DRDY saat power-down, power-up 0..2 s, setelah reset,
+ * START lewat kaki dan lewat perintah SPI, lalu kesimpulan ([DRDY]). */
+void ads_drdy_test(void);
+
+/* Pola SPI/RESET/START berulang selama seconds detik (default 20) untuk diukur osiloskop. */
+void ads_scope(int seconds);
+
+/* PWDN/RESET bergantian LOW/HIGH tiap 5 s selama seconds detik (default 60), untuk uji arus chip. */
+void ads_pwdn_cycle(int seconds);
+
 /* Ringkasan tiap 10 detik (DBG, hanya saat "debug on") + peringatan (selalu) (DRDY hilang, sampel terlewat, SPI, paket gagal,
  * onset tidak tertandai, saturasi) lewat LOG(), jadi ikut terbaca di /api/v1/logs.
  * onsets_played = jumlah onset stimulus yang sudah diputar (dari ISR I2S). */

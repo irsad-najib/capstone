@@ -117,7 +117,7 @@ export default function AdminPage() {
                 <dl className="grid grid-cols-2 gap-2">
                   <Stat label="Frames sent" value={st.frames.toLocaleString()} />
                   <Stat label="Stimuli sent" value={`${st.stims.toLocaleString()}${st.options.stims ? ` / ${st.options.stims}` : ""}`} />
-                  <Stat label="Signal time" value={formatDuration(st.frames / 16000)} />
+                  <Stat label="Signal time" value={formatDuration(st.frames / 15000)} />
                   <Stat label="Mode" value={st.recording ? `recording ${st.recording.level_db ?? "?"} dB${st.start_sweep ? ` from sweep ${st.start_sweep + 1}` : ""}` : st.options.no_response ? "synthetic, no response" : "synthetic, with ABR"} />
                 </dl>
               )}

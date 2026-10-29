@@ -11,7 +11,7 @@ Board 1 dan Board 2 disambung lewat dua header stack 12 pin (POWER dan SIGNAL).
 
 | Komponen | Di PDF | Terpasang | Catatan |
 |---|---|---|---|
-| R2, R5 (Board 2, pembagi ke TDA1308) | 47 Ω | **330 Ω** | redaman jadi −36.6 dB (dari −53.4 dB) |
+| R2, R5 (Board 2, pembagi ke TDA1308) | 47 Ω | **330 Ω** | dengan trimpot 1 kΩ paralel (330 ∥ 1k = 248 Ω) redaman jadi −39.1 dB, sama dengan `DIVIDER_DB` di firmware |
 
 ## Pin ESP32 (Board 2)
 

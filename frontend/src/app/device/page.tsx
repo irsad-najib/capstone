@@ -9,8 +9,8 @@ import { formatAgo, formatDuration } from "@/lib/abr";
 import { useSettings } from "@/lib/settings";
 import { MdCheck, MdClose, MdRefresh } from "react-icons/md";
 
-// ADS1299: Vref 4.5 V, gain 24 → skala penuh ±187 500 µV (lihat processor.RawADCToUV)
-const ADS_FULL_SCALE_UV = (4.5 / 24) * 1e6;
+// ADS1256: ±2·2.5 V (PGA 1), AD620 ×20 → skala penuh ±250 000 µV di elektroda (lihat processor.RawADCToUV)
+const ADS_FULL_SCALE_UV = (5 / 20) * 1e6;
 const FRAME_FRESH_MS = 3000;
 
 type DevicesWithRate = DevicesResponse & { fps: Record<string, number>; at: number };
@@ -192,7 +192,7 @@ export default function DevicePage() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <Card title="Hardware">
             <dl className="divide-y divide-outline-variant/50 -my-2.5">
-              <Row label="ADC" value="ADS1299, 24-bit" />
+              <Row label="ADC" value="ADS1256 + AD620, 24-bit" />
               <Row label="Gain / Vref" value="×24 / 4.5 V" />
               <Row label="Resolution" value="0.0224 µV/LSB" />
               <Row label="Sampling rate" value={abr.data ? `${abr.data.sampling_rate.toLocaleString()} Hz` : "—"} />

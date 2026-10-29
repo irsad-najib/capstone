@@ -13,7 +13,7 @@ import (
 // Latensi puncak ABR sintetis (ms setelah onset stimulus).
 var truthLatency = map[string]float64{"I": 1.6, "III": 3.7, "V": 5.6}
 
-const isiSamples = 1456 // 91 ms antar stimulus pada 16 kHz, sama seperti firmware
+const isiSamples = 91 * Fs / 1000 // 91 ms antar stimulus, sama seperti firmware
 
 // newTestProcessor memakai dsp_worker.py asli; test di-skip kalau venv belum dibuat (scripts/setup.sh).
 func newTestProcessor(t *testing.T) *Processor {
@@ -45,7 +45,7 @@ func feedTrials(t *testing.T, p *Processor, n int) {
 	t.Helper()
 	ts := int64(0)
 	send := func(uv float64, stim bool) {
-		ts += 62 // ~1/16000 s dalam mikrodetik
+		ts += 1_000_000 / Fs
 		if _, _, err := p.AddFrame(uvToRaw(uv), 0, ts, stim); err != nil {
 			t.Fatalf("AddFrame: %v", err)
 		}
@@ -121,8 +121,8 @@ func TestResetClearsState(t *testing.T) {
 }
 
 func TestRawADCToUV(t *testing.T) {
-	// ADS1299: Vref 4.5 V, gain 24, 24-bit -> 1 LSB ≈ 0.02235 µV
-	if got := RawADCToUV(1); math.Abs(got-0.022352) > 1e-5 {
+	// ADS1256: Vref 2.5 V, PGA 1 (±5 V), AD620 ×20 -> 1 LSB = 5 V / 2^23 / 20 ≈ 0.0298 µV
+	if got := RawADCToUV(1); math.Abs(got-0.029802) > 1e-5 {
 		t.Fatalf("RawADCToUV(1) = %f", got)
 	}
 }

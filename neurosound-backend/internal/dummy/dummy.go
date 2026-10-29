@@ -240,7 +240,7 @@ func (g *Generator) run(opt Options, src source, stop, done chan struct{}) {
 	var n int64
 	stims, tail := 0, -1 // tail >= 0: hitung mundur sampel setelah stimulus terakhir
 
-	// Jalan real-time (16 kHz). DSP backend bisa lebih lambat dari ini; kalau
+	// Jalan real-time (processor.Fs). DSP backend bisa lebih lambat dari ini; kalau
 	// begitu AddFrame memblok dan generator otomatis ikut melambat.
 	ticker := time.NewTicker(chunkMs * time.Millisecond)
 	defer ticker.Stop()

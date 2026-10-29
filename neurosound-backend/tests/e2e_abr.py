@@ -24,9 +24,9 @@ import urllib.request
 import numpy as np
 import websocket
 
-FS = 16000                      # harus sama dengan processor.Fs di backend
+FS = 15000                      # harus sama dengan processor.Fs di backend
 ISI = int(0.091 * FS)           # 91 ms antar stimulus, sama dengan STIM_INTERVAL_MS firmware
-LSB_UV = 9 / 2**24 / 24 * 1e6   # processor.RawADCToUV(1): ADS1299, Vref 4.5 V, gain 24
+LSB_UV = 5 / 2**23 / 20 * 1e6   # processor.RawADCToUV(1): ADS1256 ±2·2.5 V (PGA 1), AD620 ×20
 FIRMWARE_STIM_RATE = 1000 / 91
 
 WAVES = {"I": (1.6, 0.30), "III": (3.7, 0.25), "V": (5.6, 0.50)}  # latensi ms, amplitudo µV
@@ -93,7 +93,7 @@ def main():
     ap.add_argument("--mains-uv", type=float, default=5.0, help="amplitudo 50 Hz (µV)")
     ap.add_argument("--no-response", action="store_true", help="tanpa ABR (simulasi tuli)")
     ap.add_argument("--batch", type=int, default=8, help="frame per pesan WS (firmware: 8)")
-    ap.add_argument("--realtime", action="store_true", help="kirim secepat ESP32 asli (16 kHz)")
+    ap.add_argument("--realtime", action="store_true", help="kirim secepat ESP32 asli (15 kHz)")
     ap.add_argument("--timeout", type=float, default=600, help="batas tunggu pemrosesan (detik)")
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args()

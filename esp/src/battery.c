@@ -25,6 +25,14 @@
 #define EMA_ALPHA       0.2f      /* penghalusan antar pembacaan */
 #define MIN_PRESENT_MV  2500      /* di bawah ini per sel: anggap tidak terpasang */
 #define LOW_PCT         15
+#define CRIT_MV         3300      /* per sel: di bawah ini (≥ CRIT_POLLS kali) stimulus + akuisisi berhenti */
+#define CRIT_CLEAR_MV   3600      /* per sel: perintah diizinkan lagi di atas ini */
+#define CRIT_POLLS      3         /* ~3 detik berturut-turut */
+
+/* Kalibrasi dua titik: VBAT_benar = VBAT_terbaca × GAIN + OFFSET.
+ * Ukur baterai dengan multimeter di ~4.1 V dan ~3.6 V, bandingkan dengan perintah "bat". */
+#define BAT_CAL_GAIN      1.000f
+#define BAT_CAL_OFFSET_MV 0.0f
 
 /* mV per sel → persen, urut menurun. */
 static const struct { int mv; int pct; } CURVE[] = {
@@ -39,7 +47,8 @@ static const struct { int mv; int pct; } CURVE[] = {
 static adc_oneshot_unit_handle_t adc;
 static adc_cali_handle_t         cali;
 static adc_channel_t             chan;
-static bool                      ready, present, warned_low;
+static bool                      ready, present, warned_low, critical;
+static int                       crit_count;
 static float                     vbat_mv;   /* hasil EMA */
 static int64_t                   next_us;
 
@@ -68,11 +77,11 @@ void battery_init(void)
         LOG("BAT", "ADC%d gagal diinisialisasi", unit + 1);
         return;
     }
-    adc_oneshot_chan_cfg_t ccfg = { .atten = ADC_ATTEN_DB_12, .bitwidth = ADC_BITWIDTH_DEFAULT };
+    adc_oneshot_chan_cfg_t ccfg = { .atten = ADC_ATTEN_DB_6, .bitwidth = ADC_BITWIDTH_DEFAULT };
     adc_oneshot_config_channel(adc, chan, &ccfg);
 
     adc_cali_line_fitting_config_t lcfg = {
-        .unit_id = unit, .atten = ADC_ATTEN_DB_12, .bitwidth = ADC_BITWIDTH_DEFAULT,
+        .unit_id = unit, .atten = ADC_ATTEN_DB_6, .bitwidth = ADC_BITWIDTH_DEFAULT,
     };
     if (adc_cali_create_scheme_line_fitting(&lcfg, &cali) != ESP_OK) {
         cali = NULL;
@@ -94,7 +103,7 @@ static int read_pin_mv(void)
     int raw = sum / SAMPLES;
     int mv;
     if (cali && adc_cali_raw_to_voltage(cali, raw, &mv) == ESP_OK) return mv;
-    return raw * 3100 / 4095;   /* atenuasi 12 dB ≈ 0–3.1 V */
+    return raw * 1750 / 4095;   /* atenuasi 6 dB ≈ 0–1.75 V (pin maks 4.2 V × 100k/320k = 1.31 V) */
 }
 
 void battery_poll(void)
@@ -104,14 +113,31 @@ void battery_poll(void)
     if (now < next_us) return;
     next_us = now + POLL_US;
 
-    float mv = read_pin_mv() * (R_TOP_K + R_BOTTOM_K) / R_BOTTOM_K;
+    float mv = read_pin_mv() * (R_TOP_K + R_BOTTOM_K) / R_BOTTOM_K * BAT_CAL_GAIN + BAT_CAL_OFFSET_MV;
     bool was_present = present;
     present = mv >= MIN_PRESENT_MV * BAT_CELLS;
     if (!present) {
         if (was_present) LOG("BAT", "baterai tidak terdeteksi");
+        crit_count = 0;
+        critical   = false;
         return;
     }
     vbat_mv = was_present ? vbat_mv + (mv - vbat_mv) * EMA_ALPHA : mv;
+
+    int cell = (int)(vbat_mv / BAT_CELLS);
+    if (cell < CRIT_MV) {
+        if (!critical && ++crit_count >= CRIT_POLLS) {
+            critical = true;
+            LOG("BAT", "KRITIS: %.2f V < %.1f V, stimulus dan akuisisi dihentikan, isi ulang baterai",
+                vbat_mv / 1000.0f, CRIT_MV * BAT_CELLS / 1000.0f);
+        }
+    } else {
+        crit_count = 0;
+        if (critical && cell > CRIT_CLEAR_MV) {
+            critical = false;
+            LOG("BAT", "baterai %.2f V, perintah stimulus diizinkan lagi", vbat_mv / 1000.0f);
+        }
+    }
 
     int pct;
     battery_get(NULL, &pct);
@@ -130,3 +156,5 @@ bool battery_get(int *mv, int *pct)
     if (pct) *pct = pct_from_cell_mv((int)(vbat_mv / BAT_CELLS));
     return true;
 }
+
+bool battery_critical(void) { return critical; }

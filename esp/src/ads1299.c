@@ -42,6 +42,8 @@
 #define CMD_RDATAC  0x10
 #define CMD_RREG    0x20
 #define CMD_WREG    0x40
+#define CMD_START   0x08
+#define CMD_STOP    0x0A
 
 enum {
     REG_ID = 0x00, REG_CONFIG1, REG_CONFIG2, REG_CONFIG3, REG_LOFF,
@@ -290,6 +292,15 @@ static bool write_config(bool verbose)
     return bad == 0;
 }
 
+static void isr_install_task(void *arg)
+{
+    esp_err_t e = gpio_install_isr_service(ESP_INTR_FLAG_IRAM);
+    if (e != ESP_OK && e != ESP_ERR_INVALID_STATE) ESP_ERROR_CHECK(e);
+    gpio_isr_handler_add(PIN_DRDY, drdy_isr, NULL);
+    xTaskNotifyGive((TaskHandle_t)arg);
+    vTaskDelete(NULL);
+}
+
 static void hw_init(void)
 {
     gpio_config_t out = {
@@ -326,9 +337,10 @@ static void hw_init(void)
         .intr_type = GPIO_INTR_NEGEDGE,
     };
     gpio_config(&in);
-    esp_err_t e = gpio_install_isr_service(ESP_INTR_FLAG_IRAM);
-    if (e != ESP_OK && e != ESP_ERR_INVALID_STATE) ESP_ERROR_CHECK(e);
-    gpio_isr_handler_add(PIN_DRDY, drdy_isr, NULL);
+    /* Interrupt dialokasikan di core pemanggil, jadi pasang dari task di core 1:
+     * satu core dengan ads_task, jauh dari WiFi di core 0 (periode sampel 62.5 µs). */
+    xTaskCreatePinnedToCore(isr_install_task, "drdy_isr", 3072, xTaskGetCurrentTaskHandle(), 10, NULL, 1);
+    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 }
 
 /* ID ADS1299: bit4 = 1, bit3:2 = 11 (ADS1299), bit1:0 = jumlah kanal 00/01/10 (4/6/8). */
@@ -645,6 +657,7 @@ void ads_check(void)
             LOG("CHECK", "  → DRDY diam: clock ADS mati (CLKSEL pin 52 harus HIGH) / DRDY pin 47 → SIGNAL pin 8 putus");
         LOG("CHECK", "  cek daya Board 1 di header POWER: pin 2/3 ~5 V (AVDD), pin 10/11 ~3.3 V (DVDD)");
         LOG("CHECK", "  lalu header SIGNAL (lihat langkah 1), VCAP1 (C13) > 1.1 V, orientasi chip/adapter");
+        LOG("CHECK", "  uji DRDY lebih rinci: ketik \"ads drdy\"");
         LOG("CHECK", "==== BERHENTI di langkah 4: ADS1299 tidak menjawab ====");
         return;
     }
@@ -693,4 +706,258 @@ void ads_check(void)
     if (fails) LOG("CHECK", "==== SELESAI: %d pemeriksaan GAGAL, lihat baris di atas ====", fails);
     else       LOG("CHECK", "==== SELESAI: SEMUA OK, ADS1299 siap ====");
     if (was_running) ads_start();
+}
+
+/* ------------------------------------------------------------------ */
+/*  Uji DRDY rinci (perintah "ads drdy"). DRDY hidup tanpa SPI: setelah  */
+/*  reset chip men-drive DRDY HIGH, dan saat START HIGH DRDY turun tiap  */
+/*  sampel (250 SPS default). Tiap tahap dicatat level + tepi DRDY.     */
+/* ------------------------------------------------------------------ */
+typedef struct {
+    uint32_t n, hi, rise, fall;
+    int64_t  first_fall_us, min_per_us, max_per_us;
+    int      first, last;
+} drdy_stat_t;
+
+/* Polling IO34 secepatnya selama ms (tanpa interrupt), maks 500 ms per panggilan. */
+static void drdy_sample(int ms, drdy_stat_t *st)
+{
+    memset(st, 0, sizeof(*st));
+    st->first_fall_us = -1;
+    st->min_per_us = INT64_MAX;
+    int64_t t0 = esp_timer_get_time(), last_fall = -1, now;
+    int prev = gpio_get_level(PIN_DRDY);
+    st->first = prev;
+    while ((now = esp_timer_get_time()) - t0 < (int64_t)ms * 1000) {
+        int v = gpio_get_level(PIN_DRDY);
+        st->n++;
+        st->hi += v;
+        if (v && !prev) st->rise++;
+        if (!v && prev) {
+            st->fall++;
+            if (st->first_fall_us < 0) st->first_fall_us = now - t0;
+            if (last_fall >= 0) {
+                int64_t per = now - last_fall;
+                if (per < st->min_per_us) st->min_per_us = per;
+                if (per > st->max_per_us) st->max_per_us = per;
+            }
+            last_fall = now;
+        }
+        prev = v;
+    }
+    st->last = prev;
+    if (st->min_per_us == INT64_MAX) st->min_per_us = 0;
+}
+
+static const char *drdy_kind(const drdy_stat_t *st)
+{
+    if (st->fall >= 3)            return "BERDETAK";
+    if (st->hi == st->n)          return "HIGH tetap";
+    if (st->hi == 0)              return "LOW tetap";
+    return "berubah acak (mengambang?)";
+}
+
+static void drdy_log(const char *stage, const drdy_stat_t *st)
+{
+    LOG("DRDY", "  %-16s %s  HIGH %lu%%  naik %lu turun %lu  awal %d akhir %d",
+        stage, drdy_kind(st), (unsigned long)(st->n ? st->hi * 100 / st->n : 0),
+        (unsigned long)st->rise, (unsigned long)st->fall, st->first, st->last);
+    if (st->fall >= 2)
+        LOG("DRDY", "    periode %lld..%lld µs (%.0f Hz), turun pertama %lld µs",
+            st->min_per_us, st->max_per_us,
+            st->max_per_us ? 1e6 / ((st->min_per_us + st->max_per_us) / 2.0) : 0.0, st->first_fall_us);
+}
+
+static void reset_pulse(void)
+{
+    gpio_set_level(PIN_RESET, 0);
+    esp_rom_delay_us(20);
+    gpio_set_level(PIN_RESET, 1);
+    esp_rom_delay_us(100);
+}
+
+void ads_drdy_test(void)
+{
+    bool was_running = s_running, was_present = s_present;
+    if (s_present) ads_stop();
+    drdy_stat_t st, a, b, c, d;
+
+    LOG("DRDY", "==== uji DRDY (IO%d ← kaki 47 ← SIGNAL pin 8), polling langsung ====", PIN_DRDY);
+    LOG("DRDY", "IO%d tanpa pull internal: LOW/acak saat chip diam = jalur putus atau chip tidak hidup", PIN_DRDY);
+    gpio_set_level(PIN_CS, 1);
+    gpio_set_level(PIN_START, 0);
+
+    /* A. Chip dimatikan lewat PWDN/RESET LOW. */
+    LOG("DRDY", "A. PWDN LOW + RESET LOW 200 ms (chip power-down)");
+    gpio_set_level(PIN_PWDN, 0);
+    gpio_set_level(PIN_RESET, 0);
+    vTaskDelay(pdMS_TO_TICKS(200));
+    drdy_sample(100, &a);
+    drdy_log("power-down", &a);
+
+    /* B. Power-up: lihat DRDY dari awal, VCAP1 (C13 100 µF) naik pelan. */
+    LOG("DRDY", "B. PWDN + RESET HIGH, DRDY dipantau 0..2 s (VCAP1 naik)");
+    gpio_set_level(PIN_PWDN, 1);
+    gpio_set_level(PIN_RESET, 1);
+    static const int at_ms[] = { 0, 50, 200, 500, 1000, 2000 };
+    int64_t t0 = esp_timer_get_time();
+    int first_hi_ms = -1;
+    for (int i = 0; i < 6; i++) {
+        int64_t el = (esp_timer_get_time() - t0) / 1000;
+        if (at_ms[i] > el) vTaskDelay(pdMS_TO_TICKS(at_ms[i] - el));
+        drdy_sample(20, &st);
+        if (first_hi_ms < 0 && st.hi) first_hi_ms = at_ms[i];
+        char lbl[24];
+        snprintf(lbl, sizeof lbl, "t=%d ms", at_ms[i]);
+        drdy_log(lbl, &st);
+    }
+    b = st;
+
+    /* C. Pulsa RESET setelah VCAP1 stabil. */
+    LOG("DRDY", "C. pulsa RESET, SDATAC, baca ID");
+    reset_pulse();
+    vTaskDelay(pdMS_TO_TICKS(5));
+    drdy_sample(50, &c);
+    drdy_log("setelah reset", &c);
+    cmd(CMD_SDATAC);
+    uint8_t id = rreg(REG_ID);
+    LOG("DRDY", "  ID 0x%02X %s", id, id_valid(id) ? "(ADS1299 menjawab)" : "(tidak menjawab)");
+
+    /* D. Konversi lewat kaki START (IO25 → SIGNAL pin 10 → kaki 38). */
+    LOG("DRDY", "D. kaki START HIGH 500 ms (harap ~250 Hz, periode ~4000 µs)");
+    s_drdy_edges = 0;
+    gpio_set_level(PIN_START, 1);
+    drdy_sample(500, &d);
+    gpio_set_level(PIN_START, 0);
+    drdy_log("START pin", &d);
+    LOG("DRDY", "  interrupt DRDY menghitung %lu tepi turun (polling %lu)",
+        (unsigned long)s_drdy_edges, (unsigned long)d.fall);
+
+    /* E. Konversi lewat perintah SPI START (kaki START tetap LOW). */
+    LOG("DRDY", "E. perintah SPI START (0x08), kaki START LOW, 500 ms");
+    reset_pulse();
+    vTaskDelay(pdMS_TO_TICKS(5));
+    cmd(CMD_SDATAC);
+    cmd(CMD_START);
+    drdy_sample(500, &st);
+    cmd(CMD_STOP);
+    drdy_log("START SPI", &st);
+    drdy_stat_t e = st;
+
+    /* Kesimpulan. */
+    LOG("DRDY", "KESIMPULAN:");
+    bool idle_hi = c.hi == c.n, tick_pin = d.fall >= 50, tick_spi = e.fall >= 50;
+    if (tick_pin && tick_spi)
+        LOG("DRDY", "  DRDY, clock, START OK. Kalau ID tetap salah → masalah di SPI (SCLK/MOSI/MISO, R10-R12)");
+    else if (tick_spi && !tick_pin)
+        LOG("DRDY", "  START via SPI jalan, via kaki tidak → jalur START putus: IO25 → SIGNAL pin 10 → R15 → kaki 38");
+    else if (tick_pin && !tick_spi)
+        LOG("DRDY", "  START via kaki jalan, via SPI tidak → perintah SPI tidak sampai: cek CS kaki 39, SCLK 40, DIN 34");
+    else if (idle_hi)
+        LOG("DRDY", "  DRDY HIGH tapi tidak berdetak → chip hidup, clock mati: CLKSEL kaki 52 HIGH? VCAP1 > 1.1 V?");
+    else if (c.hi == 0 && a.hi == 0 && b.hi == 0)
+        LOG("DRDY", "  DRDY LOW di semua tahap → chip TIDAK men-drive DRDY (chip tidak hidup) atau jalur DRDY putus");
+    else
+        LOG("DRDY", "  DRDY tidak stabil / acak → jalur mengambang: kaki 47 ↔ SIGNAL pin 8 ↔ IO34 kemungkinan putus");
+    if (!idle_hi && !tick_pin && !tick_spi) {
+        LOG("DRDY", "  ukur di kaki chip (Board 3 nyala): 47 DRDY harap 3.3 V, 28 VCAP1 > 1.1 V,");
+        LOG("DRDY", "  48/50 DVDD 3.3 V, 35 PWDN 3.3 V, 36 RESET 3.3 V, 52 CLKSEL 3.3 V");
+        LOG("DRDY", "  lalu bunyi (power mati): kaki 47 ↔ SIGNAL pin 8. Kalau semua benar → chip rusak");
+    }
+    if (first_hi_ms >= 0)
+        LOG("DRDY", "  DRDY pertama HIGH di t=%d ms setelah power-up", first_hi_ms);
+    LOG("DRDY", "==== selesai ====");
+
+    /* Kembalikan keadaan. */
+    reset_pulse();
+    vTaskDelay(pdMS_TO_TICKS(5));
+    cmd(CMD_SDATAC);
+    if (!was_present && id_valid(rreg(REG_ID))) {
+        s_id = rreg(REG_ID);
+        set_nch(s_id);
+        LOG("ADS", "ADS1299 terdeteksi saat uji DRDY");
+        finish_init();
+    } else if (was_present) {
+        wreg(REG_CONFIG3, CONFIG3_REF);
+        vTaskDelay(pdMS_TO_TICKS(150));
+        write_config(false);
+    }
+    if (was_running) ads_start();
+}
+
+/* ------------------------------------------------------------------ */
+/*  Pola berulang untuk osiloskop (perintah "ads scope [detik]").       */
+/*  Tiap 10 ms: RESET turun 20 µs, SDATAC + RREG ID (CS/SCLK/DIN/DOUT), */
+/*  START HIGH 4 ms. Sinyal berulang, jadi mudah ditangkap trigger.     */
+/* ------------------------------------------------------------------ */
+void ads_scope(int seconds)
+{
+    if (seconds < 1 || seconds > 120) seconds = 20;
+    bool was_running = s_running;
+    if (s_present) ads_stop();
+    LOG("SCOPE", "pola osiloskop %d s: tiap 10 ms RESET 20 µs → SDATAC+RREG ID → START 4 ms", seconds);
+    LOG("SCOPE", "kaki chip: 36 RESET, 39 CS, 40 SCLK, 34 DIN, 43 DOUT, 38 START, 47 DRDY");
+    gpio_set_level(PIN_PWDN, 1);
+    uint32_t loops = 0, ok = 0, hi = 0;
+    uint8_t last = 0;
+    int64_t end = esp_timer_get_time() + (int64_t)seconds * 1000000;
+    while (esp_timer_get_time() < end) {
+        reset_pulse();
+        cmd(CMD_SDATAC);
+        last = rreg(REG_ID);
+        if (id_valid(last)) ok++;
+        gpio_set_level(PIN_START, 1);
+        vTaskDelay(pdMS_TO_TICKS(4));
+        hi += gpio_get_level(PIN_DRDY);
+        gpio_set_level(PIN_START, 0);
+        vTaskDelay(pdMS_TO_TICKS(6));
+        loops++;
+    }
+    LOG("SCOPE", "selesai: %lu putaran, ID valid %lu kali (terakhir 0x%02X), DRDY HIGH %lu kali",
+        (unsigned long)loops, (unsigned long)ok, last, (unsigned long)hi);
+    if (s_present) {
+        reset_pulse();
+        cmd(CMD_SDATAC);
+        wreg(REG_CONFIG3, CONFIG3_REF);
+        vTaskDelay(pdMS_TO_TICKS(150));
+        write_config(false);
+        if (was_running) ads_start();
+    } else if (ok) {
+        ads_reprobe();
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Uji arus (perintah "ads pwdn [detik]"): PWDN bergantian LOW/HIGH     */
+/*  tiap 5 detik. Multimeter mA seri di 5 V Board 1: chip hidup = arus   */
+/*  naik beberapa mA saat PWDN HIGH; LED indikator tetap, jadi selisih   */
+/*  dua angka = arus chip sendiri.                                       */
+/* ------------------------------------------------------------------ */
+void ads_pwdn_cycle(int seconds)
+{
+    if (seconds < 10 || seconds > 300) seconds = 60;
+    bool was_running = s_running;
+    if (s_present) ads_stop();
+    LOG("PWDN", "uji arus %d s: PWDN bergantian tiap 5 s, catat angka mA saat LOW dan HIGH", seconds);
+    gpio_set_level(PIN_START, 0);
+    for (int t = 0; t < seconds; t += 5) {
+        bool hi = (t / 5) % 2;
+        gpio_set_level(PIN_PWDN, hi);
+        gpio_set_level(PIN_RESET, hi);
+        LOG("PWDN", "  t=%3d s  PWDN %s  (%s)", t, hi ? "HIGH" : "LOW ",
+            hi ? "chip aktif: arus harus naik" : "chip power-down: arus minimum");
+        vTaskDelay(pdMS_TO_TICKS(5000));
+    }
+    gpio_set_level(PIN_PWDN, 1);
+    gpio_set_level(PIN_RESET, 1);
+    vTaskDelay(pdMS_TO_TICKS(200));
+    reset_pulse();
+    cmd(CMD_SDATAC);
+    LOG("PWDN", "selesai: selisih HIGH - LOW ≈ 0 mA → chip tidak menarik arus (mati); beberapa mA → bagian daya chip hidup");
+    if (s_present) {
+        wreg(REG_CONFIG3, CONFIG3_REF);
+        vTaskDelay(pdMS_TO_TICKS(150));
+        write_config(false);
+        if (was_running) ads_start();
+    }
 }

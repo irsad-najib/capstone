@@ -4,7 +4,9 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"sort"
 	"sync"
@@ -47,19 +49,29 @@ type rawFrame struct {
 	T    int64 `json:"t"`
 	R    int32 `json:"r"`
 	S    int   `json:"s"`
+	// UV = µV per LSB dari header biner versi 2; 0 = pakai processor.RawADCToUV.
+	UV float64 `json:"-"`
 }
 
-// Pesan biner dari firmware esp/ (ADS1299), little-endian:
+// Pesan biner dari firmware ESP32, little-endian:
 //
-//	0  u8  0xEE   1 u8 versi (1)   2 u16 n sampel   4 u32 nomor urut sampel pertama
+//	0  u8  0xEE   1 u8 versi   2 u16 n sampel   4 u32 nomor urut sampel pertama
 //	8  u64 waktu sampel pertama (µs sejak boot)
-//	16 n × { u8 flag (bit0 = onset stimulus), i24 CH1 big-endian, i24 CH2 big-endian }
+//
+// Versi 1 (esp/, ADS1299, 16 kHz): header 16 byte, langsung diikuti sampel.
+// Versi 2 (esp-ads1256/): header 24 byte,
+//
+//	16 u16 laju sampel   18 u8 kanal aktif (1 Cz-A1, 2 Cz-A2, 0 input pendek)   19 u8 PGA
+//	20 f32 µV per LSB di elektroda
+//
+// lalu n × { u8 flag (bit0 = onset stimulus), i24 CH1 big-endian, i24 CH2 big-endian }.
+// Laju sampel harus sama dengan processor.Fs, kalau tidak epoch dan latensi salah.
 const (
 	binMagic      = 0xEE
-	binVersion    = 1
-	binHeader     = 16
+	binHeaderV1   = 16
+	binHeaderV2   = 24
 	binSampleSize = 7
-	binFs         = 16000
+	binFsV1       = 16000
 )
 
 func be24(b []byte) int32 {
@@ -68,25 +80,42 @@ func be24(b []byte) int32 {
 }
 
 func parseBinary(raw []byte) ([]rawFrame, error) {
-	if len(raw) < binHeader || raw[0] != binMagic {
+	if len(raw) < binHeaderV1 || raw[0] != binMagic {
 		return nil, errors.New("header biner tidak dikenal")
 	}
-	if raw[1] != binVersion {
-		return nil, errors.New("versi biner tidak didukung")
+	hdr, fs, uv := binHeaderV1, binFsV1, 0.0
+	switch raw[1] {
+	case 1:
+	case 2:
+		if len(raw) < binHeaderV2 {
+			return nil, errors.New("header biner v2 terpotong")
+		}
+		hdr = binHeaderV2
+		fs = int(binary.LittleEndian.Uint16(raw[16:18]))
+		uv = float64(math.Float32frombits(binary.LittleEndian.Uint32(raw[20:24])))
+		if uv <= 0 || math.IsNaN(uv) || math.IsInf(uv, 0) {
+			return nil, fmt.Errorf("µV per LSB tidak valid (%g)", uv)
+		}
+	default:
+		return nil, fmt.Errorf("versi biner %d tidak didukung", raw[1])
+	}
+	if fs != processor.Fs {
+		return nil, fmt.Errorf("laju sampel device %d Hz, backend butuh %d Hz (firmware dan backend tidak cocok)", fs, processor.Fs)
 	}
 	n := int(binary.LittleEndian.Uint16(raw[2:4]))
-	if len(raw) != binHeader+n*binSampleSize {
+	if len(raw) != hdr+n*binSampleSize {
 		return nil, errors.New("panjang pesan biner tidak cocok")
 	}
 	t0 := int64(binary.LittleEndian.Uint64(raw[8:16]))
 	frames := make([]rawFrame, n)
 	for i := range frames {
-		p := raw[binHeader+i*binSampleSize:]
+		p := raw[hdr+i*binSampleSize:]
 		frames[i] = rawFrame{
 			Ch1:  be24(p[1:4]),
 			Ch2:  be24(p[4:7]),
-			TS:   t0 + int64(i)*1_000_000/binFs,
+			TS:   t0 + int64(i)*1_000_000/int64(fs),
 			Stim: p[0]&1 != 0,
+			UV:   uv,
 		}
 	}
 	return frames, nil
@@ -263,7 +292,7 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("[ws] device connected: %s", deviceID)
 	var frameCount uint64
-	var lastLog time.Time
+	var lastLog, lastBad time.Time
 	for {
 		mt, raw, err := conn.ReadMessage()
 		if err != nil {
@@ -280,7 +309,12 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if mt == websocket.BinaryMessage {
 			frames, err = parseBinary(raw)
 			if err != nil {
-				log.Printf("[ws] bad binary from %s: %v (%d byte)", deviceID, err, len(raw))
+				// ~100 pesan/detik: catat paling sering tiap 10 detik, juga ke log device.
+				if now := time.Now(); now.Sub(lastBad) >= 10*time.Second {
+					log.Printf("[ws] bad binary from %s: %v (%d byte)", deviceID, err, len(raw))
+					h.Logs.Add(deviceID, "[server] pesan biner ditolak: "+err.Error())
+					lastBad = now
+				}
 				continue
 			}
 		}
@@ -340,7 +374,11 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				frame.Stim = frame.S == 1
 			}
 
-			result, changed, err := h.proc.AddFrame(frame.Ch1, frame.Ch2, frame.TS, frame.Stim)
+			uv := frame.UV
+			if uv == 0 {
+				uv = processor.RawADCToUV(1)
+			}
+			result, changed, err := h.proc.AddFrameScaled(frame.Ch1, frame.Ch2, uv, frame.TS, frame.Stim)
 			if err != nil {
 				msg, _ := json.Marshal(map[string]string{"type": "dsp_error", "error": err.Error()})
 				_ = c.write(msg)

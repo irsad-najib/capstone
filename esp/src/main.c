@@ -27,6 +27,9 @@
  *   ads               status akuisisi;  ads test on|off = sinyal uji internal ADS
  *   ads check         cek bring-up 7 langkah dengan log [CHECK] (otomatis sekali saat
  *                     WebSocket pertama tersambung)
+ *   ads drdy          uji DRDY rinci (power-down, power-up, reset, START kaki vs SPI)
+ *   ads scope [detik] pola RESET/SPI/START berulang untuk diukur osiloskop (default 20 s)
+ *   ads pwdn [detik]  PWDN bergantian LOW/HIGH tiap 5 s untuk uji arus chip (default 60 s)
  *   debug on|off      log debug (ditandai [DEBUG]): register ADS, ringkasan akuisisi tiap 10 s,
  *                     parameter stimulus. Tersimpan di NVS, ikut terkirim ke /api/v1/logs
  *   f <Hz>            frekuensi (20..20000), mis. "f 1000"
@@ -369,7 +372,7 @@ static void print_help(void)
     printf("\n  f <Hz> | l <dBFS> | + - ++ -- | c L/R/B | on | off\n"
            "  s [mulai akhir langkah detik]  (default s 0 -60 10 5)\n"
            "  b [datar_ms] [per_detik]  (default b 2000 sekali) | remote on/off\n"
-           "  abr | tone | db <dB> | st click/burst | rate <per_s> | pol a/c/r | ads [check | test on/off]\n"
+           "  abr | tone | db <dB> | st click/burst | rate <per_s> | pol a/c/r | ads [check | drdy | scope | pwdn | test on/off]\n"
            "  debug on/off\n"
            "  p  (sweep 250/500/1k/2k/4k/8k Hz) | i2s | bat | net | wifi reset | ?  status\n\n");
 }
@@ -445,6 +448,11 @@ static void handle_line(char *line)
     float a = 0, b = 0, c = 0, d = 0;
     int   n = sscanf(line, "%7s %f %f %f %f", cmd, &a, &b, &c, &d);
     if (n < 1) return;
+    if (battery_critical() && (!strcmp(cmd, "on") || !strcmp(cmd, "abr") || !strcmp(cmd, "db") ||
+                               !strcmp(cmd, "b")  || !strcmp(cmd, "s")   || !strcmp(cmd, "p"))) {
+        LOG("BAT", "ditolak: baterai kritis (< 3.3 V), isi ulang sampai > 3.6 V");
+        return;
+    }
 
     if (!strcmp(cmd, "f") && n >= 2) {
         if (a < 20.0f || a > 20000.0f) { LOG("ERR", "frekuensi 20..20000 Hz"); return; }
@@ -500,6 +508,9 @@ static void handle_line(char *line)
         else { LOG("ERR", "pakai pol a / pol c / pol r"); return; }
     } else if (!strcmp(cmd, "ads")) {
         if (strstr(line, "check")) { ads_check(); return; }
+        if (strstr(line, "drdy"))  { ads_drdy_test(); return; }
+        if (strstr(line, "pwdn"))  { int sec = 0; sscanf(line, "%*s %*s %d", &sec); ads_pwdn_cycle(sec); return; }
+        if (strstr(line, "scope")) { int sec = 0; sscanf(line, "%*s %*s %d", &sec); ads_scope(sec); return; }
         if (!ads_present() && !ads_reprobe()) { ads_print_status(); return; }
         if      (strstr(line, "test on"))  ads_test_signal(true);
         else if (strstr(line, "test off")) ads_test_signal(false);
@@ -607,6 +618,7 @@ static void send_status(void)
     int mv, pct;
     if (battery_get(&mv, &pct))
         n += snprintf(js + n, sizeof(js) - n, ",\"bat_mv\":%d,\"bat_pct\":%d", mv, pct);
+    n += snprintf(js + n, sizeof(js) - n, ",\"bat_critical\":%s", battery_critical() ? "true" : "false");
     n += snprintf(js + n, sizeof(js) - n, "}");
     net_ws_send(js, n);
 }
@@ -633,6 +645,16 @@ static void console_task(void *arg)
         }
         net_log_flush();
         battery_poll();
+        static bool was_crit;
+        bool crit = battery_critical();
+        if (crit && !was_crit) {
+            auto_mode   = AUTO_NONE;
+            g_abr_on    = false;
+            g_on        = false;
+            g_burst_rep = false;
+            ads_stop();
+        }
+        was_crit = crit;
         /* Cek ADS lengkap sekali saat WebSocket pertama tersambung, supaya hasilnya
          * terbaca di /api/v1/logs (log saat boot sering belum terkirim). */
         static bool checked;
@@ -640,10 +662,10 @@ static void console_task(void *arg)
             checked = true;
             vTaskDelay(pdMS_TO_TICKS(1000));
             ads_check();
-            if (ads_present() && g_mode == MODE_TONE && !g_on) enter_abr();
+            if (ads_present() && g_mode == MODE_TONE && !g_on && !battery_critical()) enter_abr();
         }
         if (ads_poll(g_onsets)) {
-            if (g_mode == MODE_TONE && !g_on) enter_abr();
+            if (g_mode == MODE_TONE && !g_on && !battery_critical()) enter_abr();
             else LOG("ADS", "ketik abr untuk mulai akuisisi");
         }
 
@@ -687,8 +709,9 @@ void app_main(void)
     xTaskCreatePinnedToCore(audio_task,   "audio",   4096, NULL, 10, NULL, 0);
     xTaskCreatePinnedToCore(console_task, "console", 4096, NULL, 2,  NULL, 1);
 
+    /* Tanpa Board 1 tetap diam (driver bisa sudah di telinga); ketik on untuk tes audio. */
     if (have_ads) enter_abr();
-    else          g_on = true;   /* tanpa Board 1: langsung tes audio seperti sebelumnya */
+    else          LOG("MODE", "tone, tanpa suara sampai diketik on");
     print_status();
     print_help();
 

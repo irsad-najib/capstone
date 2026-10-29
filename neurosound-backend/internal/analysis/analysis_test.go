@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-const fs = 16000
+const fs = 15000
 
 // synth membuat waveform dengan puncak Gaussian di latensi tertentu (ms, dihitung dari index 0).
 func synth(n int, peaks map[float64]float64) []float64 {

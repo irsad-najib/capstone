@@ -9,7 +9,7 @@
  *   GET /api/v1/abr/stream    — SSE: rata-rata ABR + statistik, tiap 2 s
  *
  * Jika backend offline, mode simulasi bisa dinyalakan manual (bentuk data
- * sama dengan backend: µV, 16 kHz, epoch 60 ms dengan 10 ms pre-stimulus).
+ * sama dengan backend: µV, 15 kHz, epoch 60 ms dengan 10 ms pre-stimulus).
  */
 import { useState, useEffect, useRef, useCallback } from "react";
 import { api, backendUrl, type ABRResult, type RawResult } from "@/lib/api";
@@ -54,12 +54,12 @@ const HEALTH_INTERVAL_MS = 5000;
 const MAX_PACKETS        = 60;
 
 // ─── Default ──────────────────────────────────────────────────────────────
-const FS        = 16000;
+const FS        = 15000;
 const EPOCH_MS  = 60;
 const PRE_MS    = 10;
-const PRE_N     = (FS * PRE_MS) / 1000;               // 160
-const POST_N    = (FS * (EPOCH_MS - PRE_MS)) / 1000;  // 800
-const EPOCH_N   = PRE_N + POST_N;                     // 960
+const PRE_N     = (FS * PRE_MS) / 1000;               // 150
+const POST_N    = (FS * (EPOCH_MS - PRE_MS)) / 1000;  // 750
+const EPOCH_N   = PRE_N + POST_N;                     // 900
 
 function emptyResult(): ABRResult {
   return {
