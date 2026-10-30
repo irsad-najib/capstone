@@ -150,6 +150,9 @@ type Hub struct {
 	rawSSE   *sse.Broadcaster
 	upgrader websocket.Upgrader
 	Logs     *devlog.Store
+	// Mute != nil dan true → frame EEG dari device dihitung tapi tidak masuk processor
+	// (dipakai saat dummy jalan supaya data ESP tidak tercampur).
+	Mute func() bool
 }
 
 func NewHub(proc *processor.Processor, abrSSE, rawSSE *sse.Broadcaster) *Hub {
@@ -360,6 +363,9 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				log.Printf("[ws] %s | frame #%d (+%d/msg) | last: %s", deviceID, frameCount, len(frames), raw)
 			}
 			lastLog = now
+		}
+		if h.Mute != nil && h.Mute() {
+			continue
 		}
 
 		for _, frame := range frames {

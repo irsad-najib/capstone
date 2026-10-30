@@ -80,6 +80,7 @@ func main() {
 		start: time.Now(), stim: stimState{DB: defaultStimDB}}
 	a.hub = ws.NewHub(proc, abrSSE, rawSSE)
 	a.dummy = dummy.New(proc)
+	a.hub.Mute = func() bool { return a.dummy.Status().Running }
 	// Rekaman dummy: MongoDB (GridFS) dulu, folder DUMMY_DIR sebagai cadangan.
 	lib := dummy.NewLibrary(getenv("DUMMY_DIR", "../../abr/dummy"), pythonPath, getenv("DUMMY_SCRIPT", "dsp/dummy_npz.py"))
 	if db := store.Database(); db != nil {
@@ -119,6 +120,7 @@ func main() {
 	mux.HandleFunc("/api/v1/dummy/start", a.auth(a.handleDummyStart))
 	mux.HandleFunc("/api/v1/dummy/upload", a.auth(a.handleDummyUpload))
 	mux.HandleFunc("/api/v1/dummy/stop", a.auth(a.handleDummyStop))
+	mux.HandleFunc("/api/v1/dummy/speed", a.auth(a.handleDummySpeed))
 	mux.HandleFunc("/api/v1/logs", a.auth(a.handleLogs))
 	mux.HandleFunc("/api/v1/logs/stream", a.auth(a.hub.Logs.ServeStream))
 	mux.HandleFunc("/logs", a.auth(handleLogsPage))
@@ -440,6 +442,23 @@ func (a *app) handleDummyStop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.dummy.Stop()
+	writeJSON(w, a.dummy.Status())
+}
+
+// handleDummySpeed: POST {"speed": 1..20}, bisa diubah saat dummy berjalan.
+func (a *app) handleDummySpeed(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		Speed float64 `json:"speed"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Speed <= 0 {
+		http.Error(w, `body harus {"speed": 1..20}`, http.StatusBadRequest)
+		return
+	}
+	a.dummy.SetSpeed(body.Speed)
 	writeJSON(w, a.dummy.Status())
 }
 

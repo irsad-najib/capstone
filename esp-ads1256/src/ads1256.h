@@ -41,6 +41,9 @@
 #define ADS_AMP_GAIN     20.0f    /* gain modul AD620 (ganti kalau RG diganti: G = 1 + 49.4k/RG) */
 #define ADS_PGA_DEFAULT  1
 #define ADS_PKT_SAMPLES  150      /* 10 ms per pesan */
+/* 1 = lewati cek ID saat init: streaming tetap jalan walau STATUS tidak terbaca 3
+ * (mis. DOUT/CS bermasalah; data bisa 0 / -1). Hanya untuk uji koneksi ke backend. */
+#define ADS_SKIP_ID_CHECK 1
 
 /* Reset, cek ID (STATUS bit 7:4 = 3), tulis register, self-cal. false = ADS1256 tidak
  * terdeteksi; ads_poll() lalu mencoba lagi tiap 5 detik dan mengulang peringatan tiap 30 detik. */

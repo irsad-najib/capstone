@@ -11,7 +11,8 @@ import { useSettings, writeSettings } from "@/lib/settings";
 import { MdArrowForward, MdOpenInNew, MdPlayArrow, MdRefresh, MdStop } from "react-icons/md";
 
 const SYNTHETIC = "synthetic";
-const DEFAULT_OPTS: Required<DummyOptions> = { source: SYNTHETIC, stims: 600, noise_uv: 4, mains_uv: 1.5, no_response: false, reset: true, random_start: true };
+const DEFAULT_OPTS: Required<DummyOptions> = { source: SYNTHETIC, stims: 600, noise_uv: 4, mains_uv: 1.5, no_response: false, reset: true, random_start: true, speed: 1 };
+const MAX_SPEED = 20;
 
 const recordingLabel = (r: DummyRecording) =>
   `${r.level_db ?? "?"} dB · ${r.sweeps.toLocaleString()} sweeps · ${Math.round(r.duration_s)} s`;
@@ -62,6 +63,12 @@ export default function AdminPage() {
     } finally {
       setBusy(false);
     }
+  }
+
+  // Slider bisa digeser saat dummy berjalan; nilainya dikirim langsung ke backend.
+  function changeSpeed(v: number) {
+    setOpts(o => ({ ...o, speed: v }));
+    if (st?.running) api.dummySpeed(v).then(() => dummy.refetch()).catch(e => setMsg({ ok: false, text: String(e) }));
   }
 
   const num = (k: "stims" | "noise_uv" | "mains_uv") => (e: React.ChangeEvent<HTMLInputElement>) =>
@@ -154,6 +161,15 @@ export default function AdminPage() {
                 <label className="col-span-3 flex items-center gap-2"><input type="checkbox" className="accent-primary" checked={opts.reset} onChange={e => setOpts(o => ({ ...o, reset: e.target.checked }))} />Reset the running average first</label>
               </fieldset>
 
+              <label className="block space-y-1.5 text-sm">
+                <span className="flex justify-between text-xs text-on-surface-variant">
+                  <span>Speed (can change while running)</span>
+                  <span className="font-mono text-on-surface">{opts.speed}× {opts.speed === 1 ? "real time" : `· 500 trials ≈ ${Math.round(45 / opts.speed)} s`}</span>
+                </span>
+                <input type="range" min={1} max={MAX_SPEED} step={1} value={opts.speed}
+                  onChange={e => changeSpeed(Number(e.target.value))} className="w-full accent-primary" />
+              </label>
+
               <div className="flex gap-2">
                 {st?.running ? (
                   <Button variant="danger" onClick={() => act(api.dummyStop, "Dummy stopped.")} disabled={busy}><MdStop />Stop dummy</Button>
@@ -163,7 +179,8 @@ export default function AdminPage() {
                 <Button variant="outline" onClick={() => act(api.reset, "Average reset.")} disabled={busy}><MdRefresh />Reset average</Button>
               </div>
               <p className="text-xs text-on-surface-variant">
-                The backend runs DSP in a new Python process per trial (~2–3 trials/s), so the dummy runs slower than real time.
+                1× plays like the real device (11 stimuli/s, 500 trials ≈ 45 s). ESP32 data is ignored while the dummy runs.
+                For a full Start test on Scan, set Stimuli to 0 so the dummy keeps going across ears and levels.
               </p>
             </div>
           </Card>

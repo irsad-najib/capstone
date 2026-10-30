@@ -158,6 +158,7 @@ export interface DummyOptions {
   no_response?: boolean;
   reset?: boolean;
   random_start?: boolean; // rekaman saja: mulai dari sweep acak
+  speed?: number;         // kelipatan real-time 1..20
 }
 
 export interface DummyWaveTruth {
@@ -192,6 +193,7 @@ export interface DummyStatus {
   last_error?: string;
   recording?: DummyRecording;
   start_sweep?: number;
+  speed?: number;
 }
 
 export interface LogLine {
@@ -286,6 +288,9 @@ export const api = {
 
   /** POST /api/v1/dummy/stop */
   dummyStop: () => post<DummyStatus>("/api/v1/dummy/stop", undefined, true),
+
+  /** POST /api/v1/dummy/speed — kecepatan dummy 1..20× real-time, juga saat berjalan */
+  dummySpeed: (speed: number) => post<DummyStatus>("/api/v1/dummy/speed", { speed }, true),
 
   /** POST /api/v1/command — perintah konsol ke ESP32 (device kosong = semua) */
   command: (device: string, cmd: string) =>

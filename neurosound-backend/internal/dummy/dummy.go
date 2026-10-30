@@ -39,11 +39,14 @@ type Options struct {
 	// Rekaman saja: mulai dari sweep acak supaya tiap play merata-rata sweep yang berbeda.
 	RandomStart bool `json:"random_start"`
 	Reset       bool `json:"reset"` // reset rata-rata sebelum mulai
+	// Kelipatan real-time (1 = seperti alat asli). Bisa diubah saat jalan lewat SetSpeed.
+	Speed float64 `json:"speed"`
 }
 
 type Status struct {
 	Running   bool    `json:"running"`
 	Options   Options `json:"options"`
+	Speed     float64 `json:"speed"`
 	StartedAt string  `json:"started_at,omitempty"`
 	Frames    int64   `json:"frames"`
 	Stims     int     `json:"stims"`
@@ -88,7 +91,33 @@ var (
 	ErrUnknownFile = errors.New("rekaman tidak ditemukan, lihat /api/v1/dummy/sources")
 )
 
+const MaxSpeed = 20
+
+func clampSpeed(v float64) float64 {
+	if v < 1 {
+		return 1
+	}
+	if v > MaxSpeed {
+		return MaxSpeed
+	}
+	return v
+}
+
+// SetSpeed mengubah kecepatan dummy (juga saat berjalan); berlaku di tick berikutnya.
+func (g *Generator) SetSpeed(v float64) {
+	g.mu.Lock()
+	g.status.Speed = clampSpeed(v)
+	g.mu.Unlock()
+}
+
+func (g *Generator) speed() float64 {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return clampSpeed(g.status.Speed)
+}
+
 func (g *Generator) Start(opt Options) error {
+	opt.Speed = clampSpeed(opt.Speed)
 	if opt.Source == "" {
 		opt.Source = SourceSynthetic
 	}
@@ -131,7 +160,7 @@ func (g *Generator) Start(opt Options) error {
 	if opt.Reset {
 		g.proc.Reset()
 	}
-	g.status = Status{Running: true, Options: opt, StartedAt: time.Now().Format(time.RFC3339), Recording: rec, StartSweep: startSweep}
+	g.status = Status{Running: true, Options: opt, Speed: opt.Speed, StartedAt: time.Now().Format(time.RFC3339), Recording: rec, StartSweep: startSweep}
 	g.stop = make(chan struct{})
 	g.done = make(chan struct{})
 	stop, done := g.stop, g.done
@@ -240,7 +269,7 @@ func (g *Generator) run(opt Options, src source, stop, done chan struct{}) {
 	var n int64
 	stims, tail := 0, -1 // tail >= 0: hitung mundur sampel setelah stimulus terakhir
 
-	// Jalan real-time (processor.Fs). DSP backend bisa lebih lambat dari ini; kalau
+	// Jalan real-time × speed (processor.Fs). DSP backend bisa lebih lambat dari ini; kalau
 	// begitu AddFrame memblok dan generator otomatis ikut melambat.
 	ticker := time.NewTicker(chunkMs * time.Millisecond)
 	defer ticker.Stop()
@@ -253,7 +282,7 @@ func (g *Generator) run(opt Options, src source, stop, done chan struct{}) {
 			return
 		case <-ticker.C:
 		}
-		for k := int64(0); k < perChunk; k++ {
+		for k, nk := int64(0), int64(float64(perChunk)*g.speed()); k < nk; k++ {
 			uv, uv2, stim := src.next()
 			if stim && tail >= 0 {
 				stim = false // batas stimulus tercapai, sisa sampel hanya penutup epoch

@@ -511,7 +511,12 @@ bool ads_init(void)
     hw_init();
     if (!probe(300)) {
         log_not_found();
+#if ADS_SKIP_ID_CHECK
+        LOG("ADS", "ADS_SKIP_ID_CHECK: cek ID dilewati, streaming tetap dijalankan (data mungkin tidak valid)");
+        return finish_init();
+#else
         return false;
+#endif
     }
     return finish_init();
 }
@@ -790,6 +795,10 @@ void ads_check(void)
             LOG("CHECK", "  nilai salah/acak → sambungan goyang, MOSI IO%d salah, atau GND tidak bersama", PIN_MOSI);
         LOG("CHECK", "  cek 5 V di modul (AVDD ≥ 4.75 V, bukan 4.6 V dari USB) dan nyalakan sebelum ESP32");
         LOG("CHECK", "==== BERHENTI di langkah 3: ADS1256 tidak menjawab ====");
+        if (s_present) {   /* ADS_SKIP_ID_CHECK: kembalikan register + streaming seperti semula */
+            write_config(false);
+            if (was_running) ads_start();
+        }
         return;
     }
     LOG("CHECK", "  ADS1256 ID 3  OK");

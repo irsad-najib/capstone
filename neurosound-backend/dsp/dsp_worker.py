@@ -67,39 +67,60 @@ def _arr(value):
     return np.asarray(value, dtype=np.float64)
 
 
+def process(payload):
+    """Satu epoch: baseline, bandpass, running average, SNR, Pearson."""
+    fs = int(payload.get("fs", 15000))
+    n_trials = int(payload.get("n_trials", 0)) + 1
+
+    epoch_ch1 = _arr(payload["epoch_ch1"])
+    epoch_ch2 = _arr(payload["epoch_ch2"])
+    avg_prev_ch1 = _arr(payload.get("running_avg_ch1"))
+    avg_prev_ch2 = _arr(payload.get("running_avg_ch2"))
+
+    sos = init_sos(fs=fs)
+    corrected_ch1 = baseline_correct(epoch_ch1, fs)
+    corrected_ch2 = baseline_correct(epoch_ch2, fs)
+    filtered_ch1 = apply_bpf(sos, corrected_ch1)
+    filtered_ch2 = apply_bpf(sos, corrected_ch2)
+
+    avg_ch1 = update_running_avg(avg_prev_ch1, filtered_ch1, n_trials)
+    avg_ch2 = update_running_avg(avg_prev_ch2, filtered_ch2, n_trials)
+    pearson = compute_pearson(avg_prev_ch1, avg_ch1)
+
+    result = {
+        "filtered_ch1": filtered_ch1.tolist(),
+        "filtered_ch2": filtered_ch2.tolist(),
+        "avg_ch1": avg_ch1.tolist(),
+        "avg_ch2": avg_ch2.tolist(),
+        "snr_db_ch1": compute_snr(avg_ch1, fs),
+        "snr_db_ch2": compute_snr(avg_ch2, fs),
+        "pearson_r": pearson,
+        "status": get_status(n_trials, pearson),
+    }
+    return result
+
+
+def serve():
+    """Mode persisten: satu JSON per baris di stdin → satu JSON per baris di stdout.
+    numpy/scipy cukup di-import sekali (proses baru per trial hanya ~2-3 trial/s)."""
+    for line in sys.stdin:
+        if not line.strip():
+            continue
+        try:
+            out = process(json.loads(line))
+        except Exception as exc:
+            out = {"error": str(exc)}
+        sys.stdout.write(json.dumps(out, separators=(",", ":")) + "\n")
+        sys.stdout.flush()
+
+
 def main():
     """Baca JSON dari stdin, proses DSP, print JSON ke stdout."""
+    if "--serve" in sys.argv[1:]:
+        serve()
+        return
     try:
-        payload = json.load(sys.stdin)
-        fs = int(payload.get("fs", 15000))
-        n_trials = int(payload.get("n_trials", 0)) + 1
-
-        epoch_ch1 = _arr(payload["epoch_ch1"])
-        epoch_ch2 = _arr(payload["epoch_ch2"])
-        avg_prev_ch1 = _arr(payload.get("running_avg_ch1"))
-        avg_prev_ch2 = _arr(payload.get("running_avg_ch2"))
-
-        sos = init_sos(fs=fs)
-        corrected_ch1 = baseline_correct(epoch_ch1, fs)
-        corrected_ch2 = baseline_correct(epoch_ch2, fs)
-        filtered_ch1 = apply_bpf(sos, corrected_ch1)
-        filtered_ch2 = apply_bpf(sos, corrected_ch2)
-
-        avg_ch1 = update_running_avg(avg_prev_ch1, filtered_ch1, n_trials)
-        avg_ch2 = update_running_avg(avg_prev_ch2, filtered_ch2, n_trials)
-        pearson = compute_pearson(avg_prev_ch1, avg_ch1)
-
-        result = {
-            "filtered_ch1": filtered_ch1.tolist(),
-            "filtered_ch2": filtered_ch2.tolist(),
-            "avg_ch1": avg_ch1.tolist(),
-            "avg_ch2": avg_ch2.tolist(),
-            "snr_db_ch1": compute_snr(avg_ch1, fs),
-            "snr_db_ch2": compute_snr(avg_ch2, fs),
-            "pearson_r": pearson,
-            "status": get_status(n_trials, pearson),
-        }
-        print(json.dumps(result, separators=(",", ":")))
+        print(json.dumps(process(json.load(sys.stdin)), separators=(",", ":")))
     except Exception as exc:
         print(f"dsp_worker error: {exc}", file=sys.stderr)
         sys.exit(1)
