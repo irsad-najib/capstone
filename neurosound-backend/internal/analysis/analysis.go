@@ -39,9 +39,15 @@ var Norms = map[string]Norm{
 	"I-V":   {3.98, 0.21},
 }
 
-var waveBands = map[string][2]float64{
-	"I": {1.0, 2.5}, "III": {3.5, 4.5}, "V": {5.0, 7.5},
-}
+// Gelombang V dicari di jendela lebar (latensinya bergeser ~0.4 ms per 10 dB, 5.5 ms di
+// 80 dB sampai ~8 ms dekat ambang). III dan I dicari relatif terhadap V memakai interpeak
+// (hampir tidak berubah terhadap level): rentang normal Norms diperlebar ±0.3 ms.
+var (
+	bandV      = [2]float64{4.5, 9.5}
+	bandIIIToV = [2]float64{1.2, 2.6} // V − III
+	bandIToV   = [2]float64{3.2, 4.8} // V − I
+	minLatI    = 0.8                  // sebelum ini: artefak stimulus
+)
 
 func Compute(avg []float64, fs int, snr float64, status string) Detail {
 	waves := detectWaves(avg, fs)
@@ -60,8 +66,11 @@ func Compute(avg []float64, fs int, snr float64, status string) Detail {
 		interpeak["I-V"] = round3(lat["V"] - lat["I"])
 	}
 
+	// Skrining: respons berulang (status Konvergen = r split-half cukup tinggi) dan gelombang V
+	// terlihat. I/III boleh tidak ada: dekat ambang hanya V yang muncul. SNR ± average setara
+	// dengan r (SNR = r/(1−r)), jadi hanya dilaporkan.
 	verdict := "Refer"
-	if status == "Konvergen" && snr >= 3 && len(waves) >= 3 {
+	if status == "Konvergen" && lat["V"] > 0 {
 		verdict = "Pass"
 	}
 	normal, reasons := classify(verdict, status, snr, waves, interpeak)
@@ -73,13 +82,15 @@ func classify(verdict, status string, snr float64, waves []WaveInfo, interpeak m
 	if verdict != "Pass" {
 		switch {
 		case status != "Konvergen":
-			reasons = append(reasons, "sinyal belum konvergen ("+status+")")
-		case snr < 3:
-			reasons = append(reasons, fmt.Sprintf("SNR %.1f dB < 3 dB", snr))
+			reasons = append(reasons, fmt.Sprintf("respons belum berulang/konvergen (%s, SNR %.1f dB)", status, snr))
 		default:
-			reasons = append(reasons, fmt.Sprintf("hanya %d dari 3 gelombang (I/III/V) terdeteksi", len(waves)))
+			reasons = append(reasons, "gelombang V tidak terdeteksi")
 		}
 		return false, reasons
+	}
+	if len(waves) < 3 {
+		// Pass tapi I/III tidak terlihat (level rendah): normalitas interpeak tidak bisa dinilai.
+		return false, []string{fmt.Sprintf("hanya %d dari 3 gelombang (I/III/V) terdeteksi, interpeak tidak dinilai", len(waves))}
 	}
 	for _, k := range []string{"I-III", "III-V", "I-V"} {
 		v, n := interpeak[k], Norms[k]
@@ -94,39 +105,47 @@ func detectWaves(avg []float64, fs int) []WaveInfo {
 	if len(avg) == 0 || fs <= 0 {
 		return nil
 	}
-	out := make([]WaveInfo, 0, 3)
-	for _, name := range []string{"I", "III", "V"} {
-		band := waveBands[name]
-		start := int(band[0] / 1000 * float64(fs))
-		end := int(band[1] / 1000 * float64(fs))
-		if start < 0 {
-			start = 0
-		}
-		if end >= len(avg) {
-			end = len(avg) - 1
-		}
-		if start >= end {
-			continue
-		}
-		// Gelombang I/III/V adalah puncak positif (vertex-positif), jadi cari
-		// nilai terbesar, bukan |nilai| terbesar yang bisa jatuh ke lembah.
-		best := start
-		for i := start + 1; i <= end; i++ {
-			if avg[i] > avg[best] {
-				best = i
-			}
-		}
-		// Tidak ada puncak positif (average masih nol / hanya lembah): tidak dilaporkan.
-		if avg[best] <= 0 {
-			continue
-		}
-		out = append(out, WaveInfo{
-			Name:    name,
-			Latency: round3(float64(best) / float64(fs) * 1000),
-			Amp:     avg[best],
-		})
+	v, ok := peakIn(avg, fs, bandV[0], bandV[1])
+	if !ok {
+		return nil
 	}
-	return out
+	vMs := float64(v) / float64(fs) * 1000
+	out := make([]WaveInfo, 0, 3)
+	if i, ok := peakIn(avg, fs, math.Max(minLatI, vMs-bandIToV[1]), vMs-bandIToV[0]); ok {
+		out = append(out, wave("I", i, avg, fs))
+	}
+	if i, ok := peakIn(avg, fs, vMs-bandIIIToV[1], vMs-bandIIIToV[0]); ok {
+		out = append(out, wave("III", i, avg, fs))
+	}
+	return append(out, wave("V", v, avg, fs))
+}
+
+// peakIn mencari puncak positif tertinggi di [fromMs, toMs]. Gelombang I/III/V adalah puncak
+// positif (vertex-positif), jadi |nilai| terbesar yang bisa jatuh ke lembah tidak dipakai.
+// false kalau tidak ada nilai > 0 (average masih nol / hanya lembah).
+func peakIn(avg []float64, fs int, fromMs, toMs float64) (int, bool) {
+	start := int(fromMs / 1000 * float64(fs))
+	end := int(toMs / 1000 * float64(fs))
+	if start < 0 {
+		start = 0
+	}
+	if end >= len(avg) {
+		end = len(avg) - 1
+	}
+	if start >= end {
+		return 0, false
+	}
+	best := start
+	for i := start + 1; i <= end; i++ {
+		if avg[i] > avg[best] {
+			best = i
+		}
+	}
+	return best, avg[best] > 0
+}
+
+func wave(name string, i int, avg []float64, fs int) WaveInfo {
+	return WaveInfo{Name: name, Latency: round3(float64(i) / float64(fs) * 1000), Amp: avg[i]}
 }
 
 func round3(v float64) float64 {

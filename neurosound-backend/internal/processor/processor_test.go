@@ -126,3 +126,48 @@ func TestRawADCToUV(t *testing.T) {
 		t.Fatalf("RawADCToUV(1) = %f", got)
 	}
 }
+
+// Epoch berisi lonjakan salah-baca (skala penuh) dibuang, tidak ikut dirata-rata.
+func TestArtifactEpochRejected(t *testing.T) {
+	p := newTestProcessor(t)
+	ts := int64(0)
+	send := func(uv float64, stim bool) {
+		ts += 1_000_000 / Fs
+		if _, _, err := p.AddFrame(uvToRaw(uv), 0, ts, stim); err != nil {
+			t.Fatalf("AddFrame: %v", err)
+		}
+	}
+	for i := 0; i < preSamples+10; i++ {
+		send(0, false)
+	}
+	for k := 0; k < 4; k++ {
+		for i := 0; i < isiSamples; i++ {
+			uv := abrUV(float64(i) / Fs * 1000)
+			if k == 2 && i == 300 {
+				uv = 250000 // 0x7FFFFF di 20 ms setelah onset ketiga
+			}
+			send(uv, i == 0)
+		}
+	}
+	for i := 0; i < postSamples; i++ {
+		send(0, false)
+	}
+	r := p.Result()
+	if r.TrialCount != 3 || r.Rejected != 1 {
+		t.Fatalf("trial %d rejected %d, want 3 dan 1", r.TrialCount, r.Rejected)
+	}
+	for _, v := range r.ABRAverage[0] {
+		if math.Abs(v) > 5 {
+			t.Fatalf("lonjakan ikut ke rata-rata: %.1f µV", v)
+		}
+	}
+}
+
+// r split-half: ABR yang sama di setiap epoch → sub-rata-rata ganjil dan genap identik.
+func TestSplitHalfCorrelation(t *testing.T) {
+	p := newTestProcessor(t)
+	feedTrials(t, p, 6)
+	if r := p.Result(); r.PearsonR < 0.99 || r.SNR[0] < 10 {
+		t.Fatalf("r %.3f snr %.1f, want r ≈ 1 dan SNR tinggi untuk ABR tanpa noise", r.PearsonR, r.SNR[0])
+	}
+}

@@ -33,7 +33,8 @@ type DSPResult struct {
 	SNRCh2      float64   `json:"snr_db_ch2"`
 	PearsonR    float64   `json:"pearson_r"`
 	Status      string    `json:"status"`
-	Error       string    `json:"error,omitempty"` // hanya dari mode --serve
+	Rejected    bool      `json:"rejected,omitempty"` // epoch berartefak, rata-rata tidak berubah
+	Error       string    `json:"error,omitempty"`    // hanya dari mode --serve
 }
 
 type Runner struct {

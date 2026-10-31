@@ -45,7 +45,7 @@ func TestVerdict(t *testing.T) {
 		want   string
 	}{
 		{"Konvergen", 6, "Pass"},
-		{"Konvergen", 1, "Refer"},
+		{"Konvergen", 1, "Pass"}, // SNR hanya dilaporkan; keterulangan sudah lewat status
 		{"Terbentuk", 6, "Refer"},
 		{"Noise", 6, "Refer"},
 	}
@@ -102,5 +102,29 @@ func TestClassifyNormal(t *testing.T) {
 		if !d.Normal && len(d.Reasons) == 0 {
 			t.Errorf("%s: tidak normal tapi tanpa alasan", c.name)
 		}
+	}
+}
+
+// Latensi bergeser dengan level: III di 4.75 ms (50 dB) di luar jendela tetap lama 3.5-4.5 ms.
+// III dan I dicari relatif terhadap V, jadi tetap ketemu.
+func TestDetectWavesFollowsLevelShift(t *testing.T) {
+	want := map[string]float64{"I": 2.8, "III": 4.75, "V": 6.776}
+	avg := synth(800, map[float64]float64{2.8: 0.15, 4.75: 0.114, 6.776: 0.279})
+	got := map[string]float64{}
+	for _, w := range Compute(avg, fs, 10, "Konvergen").Waves {
+		got[w.Name] = w.Latency
+	}
+	for k, v := range want {
+		if math.Abs(got[k]-v) > 1000.0/fs {
+			t.Errorf("gelombang %s = %.3f ms, want %.3f (semua: %v)", k, got[k], v, got)
+		}
+	}
+}
+
+// Dekat ambang hanya gelombang V yang muncul: tetap Pass, normalitas tidak dinilai.
+func TestVerdictPassWithOnlyWaveV(t *testing.T) {
+	d := Compute(synth(800, map[float64]float64{7.576: 0.15}), fs, 6, "Konvergen")
+	if d.Verdict != "Pass" || d.Normal {
+		t.Fatalf("verdict %s normal %v, want Pass dan tidak normal (interpeak tidak dinilai): %+v", d.Verdict, d.Normal, d)
 	}
 }

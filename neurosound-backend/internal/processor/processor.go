@@ -21,6 +21,17 @@ const (
 	preSamples   = int(PreStimMs * Fs / 1000)
 	postSamples  = int((EpochMs - PreStimMs) * Fs / 1000)
 	epochSamples = preSamples + postSamples
+
+	// Jendela respons untuk r split-half dan SNR: 1-10 ms setelah onset (gelombang I-V).
+	respFromMs = 1.0
+	respToMs   = 10.0
+
+	// Status: Noise < MinTrials; Konvergen ≥ ConvergeTrials dan r split-half ≥ ConvergeR.
+	// Dua rata-rata berisi noise saja: r di 1-10 ms bersimpangan ±0.19 (~27 derajat bebas
+	// pada pita 100-3000 Hz), jadi r ≥ 0.4 ≈ 2 % positif palsu.
+	MinTrials      = 100
+	ConvergeTrials = 500
+	ConvergeR      = 0.4
 )
 
 // Rantai analog default: AD620 (gain AmpGain) → ADS1256 (VREF 2.5 V, PGA 1).
@@ -49,8 +60,9 @@ type Result struct {
 	FrameCount   int64           `json:"frame_count"`
 	Quality      string          `json:"quality"`
 	Status       string          `json:"status"`
-	SNR          []float64       `json:"snr"`
-	PearsonR     float64         `json:"pearson_r"`
+	SNR          []float64       `json:"snr"`       // ± average: (A+B)/2 vs (A−B)/2 di 1-10 ms
+	PearsonR     float64         `json:"pearson_r"` // korelasi sub-rata-rata ganjil vs genap di 1-10 ms
+	Rejected     int             `json:"rejected"`  // epoch dibuang (artefak)
 	Analysis     analysis.Detail `json:"analysis"`
 }
 
@@ -70,13 +82,17 @@ type Processor struct {
 	avgCh1       []float64
 	avgCh2       []float64
 	trials       int
+	rejected     int
 	stims        int
-	frames       int64
-	snr          []float64
-	pearson      float64
-	status       string
-	snapshots    []session.Snapshot
-	lastRaw      RawResult
+	// Jumlah epoch terfilter ganjil (A) dan genap (B) untuk r split-half dan SNR ± average.
+	sumA, sumB []float64
+	nA, nB     int
+	frames     int64
+	snr        []float64
+	pearson    float64
+	status     string
+	snapshots  []session.Snapshot
+	lastRaw    RawResult
 }
 
 func New(cfg Config, ring *buffer.RingBuffer, runner *dsp.Runner) *Processor {
@@ -94,6 +110,8 @@ func New(cfg Config, ring *buffer.RingBuffer, runner *dsp.Runner) *Processor {
 		avgCh2: make([]float64, epochSamples),
 		snr:    []float64{0, 0},
 		status: "Noise",
+		sumA:   make([]float64, epochSamples),
+		sumB:   make([]float64, epochSamples),
 	}
 }
 
@@ -164,12 +182,18 @@ func (p *Processor) processReady(currentSeq int64) (*Result, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
+	if result.Rejected {
+		p.rejected++
+		out := p.resultLocked()
+		return &out, true, nil
+	}
 	p.trials++
 	p.avgCh1 = result.AvgCh1
 	p.avgCh2 = result.AvgCh2
-	p.snr = []float64{round1(result.SNRCh1), round1(result.SNRCh2)}
-	p.pearson = result.PearsonR
-	p.status = result.Status
+	p.addSplitLocked(result.FilteredCh1)
+	p.pearson, p.snr[0] = p.splitStatsLocked()
+	p.snr[1] = round1(result.SNRCh2)
+	p.status = statusFor(p.trials, p.pearson)
 
 	if p.trials%p.cfg.SnapshotEvery == 0 {
 		p.snapshots = append(p.snapshots, session.Snapshot{
@@ -203,6 +227,10 @@ func (p *Processor) Reset() {
 	p.avgCh1 = make([]float64, epochSamples)
 	p.avgCh2 = make([]float64, epochSamples)
 	p.trials = 0
+	p.rejected = 0
+	p.sumA = make([]float64, epochSamples)
+	p.sumB = make([]float64, epochSamples)
+	p.nA, p.nB = 0, 0
 	p.stims = 0
 	p.frames = 0
 	p.snr = []float64{0, 0}
@@ -249,8 +277,92 @@ func (p *Processor) resultLocked() Result {
 		Status:       p.status,
 		SNR:          append([]float64(nil), p.snr...),
 		PearsonR:     p.pearson,
+		Rejected:     p.rejected,
 		Analysis:     detail,
 	}
+}
+
+func (p *Processor) addSplitLocked(filtered []float64) {
+	if len(filtered) != epochSamples {
+		return
+	}
+	sum := p.sumA
+	if p.trials%2 == 0 {
+		sum = p.sumB
+		p.nB++
+	} else {
+		p.nA++
+	}
+	for i, v := range filtered {
+		sum[i] += v
+	}
+}
+
+// splitStatsLocked: r = korelasi sub-rata-rata A dan B; SNR = daya (A+B)/2 dikurangi daya
+// noise (A−B)/2, dibagi daya noise (dB). Keduanya di jendela respons 1-10 ms.
+func (p *Processor) splitStatsLocked() (r, snr float64) {
+	if p.nA == 0 || p.nB == 0 {
+		return 0, 0
+	}
+	from := preSamples + int(respFromMs*float64(p.cfg.Fs)/1000)
+	to := preSamples + int(respToMs*float64(p.cfg.Fs)/1000)
+	a := make([]float64, to-from)
+	b := make([]float64, to-from)
+	var ps, pn float64
+	for i := range a {
+		a[i] = p.sumA[from+i] / float64(p.nA)
+		b[i] = p.sumB[from+i] / float64(p.nB)
+		s, n := (a[i]+b[i])/2, (a[i]-b[i])/2
+		ps += s * s
+		pn += n * n
+	}
+	r = math.Round(pearson(a, b)*1000) / 1000
+	if pn == 0 {
+		if ps > 0 {
+			return r, 60 // tanpa noise (data sintetis): batas atas
+		}
+		return r, 0
+	}
+	ratio := (ps - pn) / pn
+	if ratio < 0.01 {
+		ratio = 0.01 // −20 dB: tidak ada sinyal di atas noise
+	}
+	return r, round1(10 * math.Log10(ratio))
+}
+
+func statusFor(trials int, r float64) string {
+	switch {
+	case trials < MinTrials:
+		return "Noise"
+	case trials >= ConvergeTrials && r >= ConvergeR:
+		return "Konvergen"
+	default:
+		return "Terbentuk"
+	}
+}
+
+func pearson(a, b []float64) float64 {
+	n := float64(len(a))
+	if n < 2 {
+		return 0
+	}
+	var ma, mb float64
+	for i := range a {
+		ma += a[i]
+		mb += b[i]
+	}
+	ma, mb = ma/n, mb/n
+	var sab, saa, sbb float64
+	for i := range a {
+		da, db := a[i]-ma, b[i]-mb
+		sab += da * db
+		saa += da * da
+		sbb += db * db
+	}
+	if saa == 0 || sbb == 0 {
+		return 0
+	}
+	return sab / math.Sqrt(saa*sbb)
 }
 
 func (p *Processor) rawResultLocked(windowMs float64) RawResult {

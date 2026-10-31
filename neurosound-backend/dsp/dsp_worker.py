@@ -61,6 +61,21 @@ def get_status(n_trials: int, pearson_r: float) -> str:
     return "Terbentuk"
 
 
+# Artifact rejection: epoch dibuang kalau satu sampel terfilter menyimpang lebih dari
+# REJECT_K × noise robust epoch itu (1.4826·MAD), minimal REJECT_MIN_UV. Menangkap salah-baca
+# ADC (ribuan µV) dan kedip/gerak, tanpa membuang ABR (< 1 µV) pada epoch yang bersih.
+REJECT_K = 8.0
+REJECT_MIN_UV = 25.0
+
+
+def is_artifact(filtered: np.ndarray, k: float = REJECT_K, min_uv: float = REJECT_MIN_UV) -> bool:
+    if filtered.size == 0:
+        return False
+    dev = np.abs(filtered - np.median(filtered))
+    sigma = 1.4826 * np.median(dev)
+    return bool(dev.max() > max(k * sigma, min_uv))
+
+
 def _arr(value):
     if value is None:
         return None
@@ -82,6 +97,18 @@ def process(payload):
     corrected_ch2 = baseline_correct(epoch_ch2, fs)
     filtered_ch1 = apply_bpf(sos, corrected_ch1)
     filtered_ch2 = apply_bpf(sos, corrected_ch2)
+
+    if payload.get("reject", True) and is_artifact(
+            filtered_ch1, float(payload.get("reject_k", REJECT_K)), float(payload.get("reject_min_uv", REJECT_MIN_UV))):
+        # Rata-rata tidak berubah; backend tidak menambah jumlah trial.
+        return {
+            "rejected": True,
+            "filtered_ch1": filtered_ch1.tolist(),
+            "filtered_ch2": filtered_ch2.tolist(),
+            "avg_ch1": [] if avg_prev_ch1 is None else avg_prev_ch1.tolist(),
+            "avg_ch2": [] if avg_prev_ch2 is None else avg_prev_ch2.tolist(),
+            "snr_db_ch1": 0.0, "snr_db_ch2": 0.0, "pearson_r": 0.0, "status": "",
+        }
 
     avg_ch1 = update_running_avg(avg_prev_ch1, filtered_ch1, n_trials)
     avg_ch2 = update_running_avg(avg_prev_ch2, filtered_ch2, n_trials)
