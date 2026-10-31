@@ -65,12 +65,15 @@
 #define MUX_SHORT    0x00   /* AIN0 − AIN0 */
 #define MUX_AINCOM   0x08   /* NSEL = AINCOM, PSEL di bit 7:4 */
 
-#define PKT_HDR    24
-#define PKT_BYTES  (PKT_HDR + ADS_PKT_SAMPLES * 7)
-#define N_PKT      24           /* 240 ms cadangan saat TLS lambat */
+#define PKT_HDR        24
+#define PKT_ONSET_MAX  16       /* onset per paket 100 ms (stimulus 11/s → biasanya 1-2) */
+#define PKT_BYTES      (PKT_HDR + ADS_PKT_SAMPLES * 3 + 1 + 2 * PKT_ONSET_MAX)
+#define N_PKT          6        /* 600 ms cadangan saat jaringan lambat */
 
 typedef struct {
     uint16_t len;
+    uint8_t  n_on;
+    uint16_t on[PKT_ONSET_MAX]; /* indeks sampel onset di paket ini */
     uint8_t  data[PKT_BYTES];
 } pkt_t;
 
@@ -91,6 +94,8 @@ static volatile uint32_t s_sent, s_send_fail, s_offline;
 static volatile int32_t  s_last;
 static volatile uint32_t s_drdy_edges;   /* pulsa DRDY saat interrupt nyala, untuk cek laju */
 static volatile uint32_t s_glitches;     /* tepi turun palsu di DRDY yang ditolak ISR */
+static volatile uint32_t s_badreads;
+static volatile uint32_t s_send_max_us, s_send_tot_ms;   /* waktu net_ws_send_bin */     /* RDATA 0xFFFFFF (DOUT tidak di-drive), diganti sampel sebelumnya */
 static volatile int64_t  s_last_edge;
 static volatile uint32_t s_rd_max_us;    /* waktu RDATA terlama per periode ringkasan */
 static volatile int32_t  s_min, s_max;   /* rentang per periode ringkasan, direset ads_poll */
@@ -243,7 +248,11 @@ static void flush_pkt(void)
     } else {
         uint16_t cnt = (uint16_t)cur_n;
         memcpy(cur->data + 2, &cnt, 2);
-        cur->len = PKT_HDR + cur_n * 7;
+        /* Ekor paket v3: u8 jumlah onset, lalu indeks sampelnya (u16 LE). */
+        uint8_t *t = cur->data + PKT_HDR + cur_n * 3;
+        t[0] = cur->n_on;
+        memcpy(t + 1, cur->on, 2 * cur->n_on);
+        cur->len = PKT_HDR + cur_n * 3 + 1 + 2 * cur->n_on;
         if (xQueueSend(full_q, &cur, 0) != pdTRUE) {
             s_dropped += cur_n;
             xQueueSend(free_q, &cur, 0);
@@ -277,6 +286,14 @@ static void ads_task(void *arg)
         int64_t t_us = esp_timer_get_time();
         uint8_t raw[3];
         int32_t v = rdata(raw);
+        /* 0xFFFFFF = DOUT tidak di-drive saat dibaca (baca bertabrakan dengan update data).
+         * Dengan offset AD620 ~1.5 V nilai −1 LSB praktis tidak pernah sah: tahan sampel
+         * sebelumnya supaya tidak muncul lonjakan −75 mV di epoch. */
+        if (v == -1 && s_samples) {
+            v = s_last;
+            raw[0] = (uint8_t)(v >> 16); raw[1] = (uint8_t)(v >> 8); raw[2] = (uint8_t)v;
+            s_badreads++;
+        }
         uint32_t rd_us = (uint32_t)(esp_timer_get_time() - t_us);
         if (rd_us > s_rd_max_us) s_rd_max_us = rd_us;
 
@@ -306,8 +323,9 @@ static void ads_task(void *arg)
             uint8_t *h = cur->data;
             uint16_t fs  = ADS_SPS;
             float    uv  = uv_per_lsb();
+            cur->n_on = 0;
             h[0] = 0xEE;
-            h[1] = 2;
+            h[1] = 3;
             memcpy(h + 4, &seq, 4);
             memcpy(h + 8, &t_us, 8);
             memcpy(h + 16, &fs, 2);
@@ -315,10 +333,8 @@ static void ads_task(void *arg)
             h[19] = (uint8_t)s_pga;
             memcpy(h + 20, &uv, 4);
         }
-        uint8_t *p = cur->data + PKT_HDR + cur_n * 7;
-        p[0] = flag;
-        memcpy(p + 1, raw, 3);   /* kanal aktif apa adanya (i24 big-endian) */
-        memset(p + 4, 0, 3);     /* CH2 tidak dipakai */
+        memcpy(cur->data + PKT_HDR + cur_n * 3, raw, 3);   /* kanal aktif, i24 big-endian */
+        if (flag && cur->n_on < PKT_ONSET_MAX) cur->on[cur->n_on++] = (uint16_t)cur_n;
         seq++;
 
         if (++cur_n == ADS_PKT_SAMPLES) flush_pkt();
@@ -331,9 +347,17 @@ static void send_task(void *arg)
     pkt_t *p;
     for (;;) {
         xQueueReceive(full_q, &p, portMAX_DELAY);
-        if (!net_ws_connected())                  s_offline++;
-        else if (net_ws_send_bin(p->data, p->len)) s_sent++;
-        else                                      s_send_fail++;
+        if (!net_ws_connected()) {
+            s_offline++;
+        } else {
+            int64_t t0 = esp_timer_get_time();
+            bool ok = net_ws_send_bin(p->data, p->len);
+            uint32_t us = (uint32_t)(esp_timer_get_time() - t0);
+            if (us > s_send_max_us) s_send_max_us = us;
+            s_send_tot_ms += us / 1000;
+            if (ok) s_sent++;
+            else    s_send_fail++;
+        }
         xQueueSend(free_q, &p, 0);
     }
 }
@@ -611,10 +635,12 @@ void ads_print_status(void)
         (unsigned long)s_stims);
     LOG("ADS", "  sampel terakhir %.1f µV di elektroda, %.4f V di input ADC",
         s_last * uv_per_lsb(), s_last * v_per_lsb(s_pga));
-    LOG("ADS", "  terlewat=%lu  timeout=%lu  dibuang=%lu",
-        (unsigned long)s_missed, (unsigned long)s_timeouts, (unsigned long)s_dropped);
-    LOG("ADS", "  paket terkirim=%lu  gagal=%lu  offline=%lu",
-        (unsigned long)s_sent, (unsigned long)s_send_fail, (unsigned long)s_offline);
+    LOG("ADS", "  terlewat=%lu  timeout=%lu  dibuang=%lu  baca rusak=%lu",
+        (unsigned long)s_missed, (unsigned long)s_timeouts, (unsigned long)s_dropped,
+        (unsigned long)s_badreads);
+    LOG("ADS", "  paket terkirim=%lu  gagal=%lu  offline=%lu  kirim total %lu ms, terlama %lu ms",
+        (unsigned long)s_sent, (unsigned long)s_send_fail, (unsigned long)s_offline,
+        (unsigned long)s_send_tot_ms, (unsigned long)(s_send_max_us / 1000));
 }
 
 /* Ringkasan berkala (hanya saat debug) dan peringatan (selalu) ke log, ikut terkirim ke
@@ -854,6 +880,89 @@ void ads_check(void)
 /* ------------------------------------------------------------------ */
 /*  Scan kanal (perintah "ads scan"), sama dengan ADS1256_Channel_Scan  */
 /* ------------------------------------------------------------------ */
+#define DUMP_N 3000
+static int32_t s_dump[DUMP_N];
+static float   s_dump_ac[DUMP_N];   /* sampel − rata-rata, float (ESP32 tidak punya FPU double) */
+
+static float goertzel(const float *x, int n, float f, float fs)
+{
+    vTaskDelay(1);   /* beri waktu task IDLE (watchdog) di tiap frekuensi */
+    float w = 2.0f * (float)M_PI * f / fs, c = 2.0f * cosf(w), s1 = 0, s2 = 0;
+    for (int i = 0; i < n; i++) {
+        float s0 = x[i] + c * s1 - s2;
+        s2 = s1;
+        s1 = s0;
+    }
+    float p = s1 * s1 + s2 * s2 - c * s1 * s2;
+    return p > 0 ? 2.0f * sqrtf(p) / n : 0;   /* amplitudo puncak */
+}
+
+void ads_dump(void)
+{
+    if (!s_present) { LOG("ADS", "ADS1256 tidak terdeteksi"); return; }
+    bool was_running = s_running;
+    ads_stop();
+    const float vl = v_per_lsb(s_pga);
+
+    wait_low(20000);
+    wreg(REG_MUX, (uint8_t)(0 << 4) | MUX_AINCOM);
+    cmd(CMD_SYNC);
+    cmd(CMD_WAKEUP);
+    int n = 0;
+    int64_t t0 = 0;
+    for (int i = -2; i < DUMP_N; i++) {
+        if (!wait_fall(20000)) break;
+        int32_t v = rdata(NULL);
+        if (i < 0) continue;
+        if (n == 0) t0 = esp_timer_get_time();
+        s_dump[n++] = v;
+    }
+    int64_t dt = esp_timer_get_time() - t0;
+    write_config(false);
+    if (was_running) ads_start();
+    if (n < 100) { LOG("DUMP", "DRDY timeout"); return; }
+
+    double fs = (n - 1) * 1e6 / (double)dt, mean = 0, ac = 0;
+    int32_t mn = s_dump[0], mx = s_dump[0];
+    for (int i = 0; i < n; i++) {
+        mean += s_dump[i];
+        if (s_dump[i] < mn) mn = s_dump[i];
+        if (s_dump[i] > mx) mx = s_dump[i];
+    }
+    mean /= n;
+    for (int i = 0; i < n; i++) {
+        s_dump_ac[i] = (float)(s_dump[i] - mean);
+        ac += (double)s_dump_ac[i] * s_dump_ac[i];
+    }
+    ac = sqrt(ac / n);
+
+    /* Cari puncak di grid log 10 Hz..7 kHz, lalu perhalus di sekitar puncak. */
+    float best_f = 0, best_a = 0;
+    for (float f = 10; f < 7000; f *= 1.04f) {
+        float a = goertzel(s_dump_ac, n, f, (float)fs);
+        if (a > best_a) { best_a = a; best_f = f; }
+    }
+    for (float f = best_f / 1.04f, f1 = best_f * 1.04f, df = best_f * 0.004f; f < f1; f += df) {
+        float a = goertzel(s_dump_ac, n, f, (float)fs);
+        if (a > best_a) { best_a = a; best_f = f; }
+    }
+    float a50 = goertzel(s_dump_ac, n, 50.0f, (float)fs);
+
+    LOG("DUMP", "AIN0 %d sampel @ %.0f SPS: rata-rata %.4f V  min %.4f  maks %.4f  p-p %.4f V",
+        n, fs, mean * vl, mn * vl, mx * vl, (mx - mn) * vl);
+    LOG("DUMP", "  AC %.4f Vrms  puncak %.1f Hz (%.4f Vpk)  50 Hz %.4f Vpk",
+        ac * vl, best_f, best_a * vl, a50 * vl);
+    LOG("DUMP", "  %s", ac * vl < 0.005 ? "tenang: tidak ada ayunan berarti"
+                     : best_f < 70 ? "dengung jala-jala (50 Hz): input/elektroda/GND"
+                     : best_f > 1000 ? "osilasi kHz: AD620/LM358 berosilasi atau ripple ICL7660, tambah bypass 100 nF + 10 µF"
+                     : "ayunan frekuensi rendah-menengah: cek sambungan dan catu AD620");
+    char row[160];
+    int len = 0;
+    for (int i = 0; i < 40 && len < (int)sizeof(row) - 8; i++)
+        len += snprintf(row + len, sizeof(row) - len, "%.2f ", s_dump[i] * vl);
+    LOG("DUMP", "  40 sampel pertama (V): %s", row);
+}
+
 void ads_scan(void)
 {
     if (!s_present) { LOG("ADS", "ADS1256 tidak terdeteksi"); return; }

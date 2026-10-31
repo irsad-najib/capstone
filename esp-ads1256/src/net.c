@@ -43,6 +43,7 @@
 #include "nvs_flash.h"
 #include "nvs.h"
 #include "lwip/sockets.h"
+#include "lwip/tcp.h"
 
 #define AP_SSID          "ESP32-Setup"
 #define AP_PASS          "12345678"
@@ -120,6 +121,22 @@ static bool json_str(const char *js, int len, const char *key, char *out, size_t
     return true;
 }
 
+/* esp_websocket_client menulis header dan payload frame dalam dua write. Dengan Nagle,
+ * write kedua ditahan sampai header di-ACK (delayed ACK server ~40-100 ms), jadi
+ * hanya ~11 pesan/s lewat (perlu 100/s untuk 15 kSPS). Library tidak membuka socket-nya,
+ * jadi TCP_NODELAY dipasang di semua socket TCP yang terbuka (mode STA: hanya WS ini). */
+static int set_nodelay_all(void)
+{
+    int n = 0;
+    for (int fd = LWIP_SOCKET_OFFSET; fd < LWIP_SOCKET_OFFSET + CONFIG_LWIP_MAX_SOCKETS; fd++) {
+        int type = 0, one = 1;
+        socklen_t len = sizeof(type);
+        if (getsockopt(fd, SOL_SOCKET, SO_TYPE, &type, &len) != 0 || type != SOCK_STREAM) continue;
+        if (setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one)) == 0) n++;
+    }
+    return n;
+}
+
 static void ws_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
     (void)arg; (void)base;
@@ -128,7 +145,7 @@ static void ws_event(void *arg, esp_event_base_t base, int32_t id, void *data)
     switch (id) {
     case WEBSOCKET_EVENT_CONNECTED:
         ws_connects++;
-        LOG("WS", "terhubung ke %s", NET_WS_URI);
+        LOG("WS", "terhubung ke %s  (TCP_NODELAY %d socket)", NET_WS_URI, set_nodelay_all());
         break;
     case WEBSOCKET_EVENT_DISCONNECTED:
         LOG("WS", "terputus, reconnect otomatis");
@@ -186,6 +203,10 @@ static void ws_start(void)
         .ping_interval_sec    = 15,   /* Cloudflare menutup koneksi idle */
         .task_stack           = 6144,
         .buffer_size          = 2048,
+        /* Core 1 hampir penuh oleh akuisisi ADS (15k RDATA/s); TLS di sana membuat IDLE1
+         * kelaparan (task_wdt) dan WS putus. Satukan dengan WiFi & send_task di core 0. */
+        .task_core_id_set     = true,
+        .task_core_id         = 0,
     };
     ws = esp_websocket_client_init(&cfg);
     esp_websocket_register_events(ws, WEBSOCKET_EVENT_ANY, ws_event, NULL);

@@ -50,7 +50,9 @@
  *                     (default: s 0 -60 10 5). "s" lagi untuk berhenti
  *   p                 putar frekuensi audiometri 250..8000 Hz, 3 detik tiap step
  *   i2s               laju frame I2S, error write, sampel puncak
- *   bat               tegangan dan persen baterai (IO35)
+ *   bat               tegangan dan persen baterai (IO35), juga otomatis tiap 5 menit
+ *   full              pemeriksaan lengkap: bat, net, i2s, ads check, ads scan, status
+ *                     (otomatis sekali saat WebSocket pertama tersambung)
  *   net               status WiFi / WebSocket
  *   wifi reset        hapus kredensial WiFi, restart ke mode portal
  *   ?                 status + bantuan
@@ -95,6 +97,7 @@
  * sebelum driver dipasang ke telinga orang. */
 #define LEVEL_MAX_DBFS  0.0f
 #define STATUS_PERIOD_US 5000000
+#define BAT_LOG_US       300000000LL   /* 5 menit */
 /* Level dB (dari frontend / perintah db) yang dipetakan ke 0 dBFS. BELUM TERKALIBRASI:
  * ganti dengan hasil pengukuran (SLM / ambang normal) sebelum angka dB dipakai di laporan. */
 #define DB_AT_0DBFS     90.0f
@@ -351,6 +354,22 @@ static void print_battery(void)
     else                        LOG("BAT", "tidak terdeteksi");
 }
 
+/* Pemeriksaan lengkap (baterai, jaringan, I2S, ADS check + scan, status) lewat LOG(),
+ * jadi bisa dibaca di /api/v1/logs saat ESP jalan dari baterai tanpa USB. */
+static void print_status(void);
+static void full_check(void)
+{
+    LOG("FULL", "==== pemeriksaan lengkap, uptime %lld s ====", esp_timer_get_time() / 1000000);
+    print_battery();
+    net_print_status();
+    print_i2s_diag();
+    ads_check();
+    ads_scan();
+    ads_print_status();
+    print_status();
+    LOG("FULL", "==== selesai ====");
+}
+
 static const char *stim_name(void)
 {
     return g_stim_type == STIM_CLICK ? "klik 100 us" : "burst 2-1-2";
@@ -391,7 +410,7 @@ static void print_help(void)
            "  b [datar_ms] [per_detik]  (default b 2000 sekali) | remote on/off\n"
            "  abr | tone | db <dB> | st click/burst | rate <per_s> | pol a/c/r | ads [ch 1/2 | pga n | buf on/off | short on/off | check | scan]\n"
            "  debug on/off\n"
-           "  p  (sweep 250/500/1k/2k/4k/8k Hz) | i2s | bat | net | wifi reset | ?  status\n\n");
+           "  p  (sweep 250/500/1k/2k/4k/8k Hz) | i2s | bat | net | full | wifi reset | ?  status\n\n");
 }
 
 /* Redaman per kanal setelah level; satu-satunya pengali selain level itu sendiri. */
@@ -548,6 +567,7 @@ static void handle_line(char *line)
         if (sscanf(line, "%*s ch %d", &v) == 1) { ads_select(v); return; }
         if (!ads_present() && !ads_reprobe()) { ads_print_status(); return; }
         if (strstr(line, "scan")) { ads_scan(); return; }
+        if (strstr(line, "dump")) { ads_dump(); return; }
         if      (sscanf(line, "%*s pga %d", &v) == 1) ads_set_pga(v);
         else if (strstr(line, "buf on"))    ads_set_buffer(true);
         else if (strstr(line, "buf off"))   ads_set_buffer(false);
@@ -610,6 +630,9 @@ static void handle_line(char *line)
         return;
     } else if (!strcmp(cmd, "i2s")) {
         print_i2s_diag();
+        return;
+    } else if (!strcmp(cmd, "full")) {
+        full_check();
         return;
     } else if (!strcmp(cmd, "bat")) {
         print_battery();
@@ -694,13 +717,19 @@ static void console_task(void *arg)
             ads_stop();
         }
         was_crit = crit;
-        /* Cek ADS lengkap sekali saat WebSocket pertama tersambung, supaya hasilnya
+        /* Uji durasi baterai: tegangan tercatat di log backend tiap 5 menit. */
+        static int64_t next_bat_us = BAT_LOG_US;
+        if (esp_timer_get_time() >= next_bat_us) {
+            next_bat_us += BAT_LOG_US;
+            print_battery();
+        }
+        /* Pemeriksaan lengkap sekali saat WebSocket pertama tersambung, supaya hasilnya
          * terbaca di /api/v1/logs (log saat boot sering belum terkirim). */
         static bool checked;
         if (!checked && net_ws_connected()) {
             checked = true;
             vTaskDelay(pdMS_TO_TICKS(1000));
-            ads_check();
+            full_check();
             if (ads_present() && g_mode == MODE_TONE && !g_on && !battery_critical()) enter_abr();
         }
         if (ads_poll(g_onsets)) {

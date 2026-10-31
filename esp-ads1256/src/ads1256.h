@@ -22,9 +22,9 @@
  * dipindah per sampel). Kanal dipilih lewat "ads ch 1|2", atau otomatis dari "c L" / "c R"
  * (telinga yang diberi bunyi = telinga yang direkam, ipsilateral).
  *
- * Data dikirim ke backend sebagai pesan WebSocket biner versi 2, little-endian:
+ * Data dikirim ke backend sebagai pesan WebSocket biner versi 3, little-endian:
  *   off 0  u8   0xEE (magic)
- *   off 1  u8   versi = 2
+ *   off 1  u8   versi = 3
  *   off 2  u16  n sampel
  *   off 4  u32  nomor urut sampel pertama
  *   off 8  u64  waktu sampel pertama (µs sejak boot, esp_timer)
@@ -32,15 +32,16 @@
  *   off 18 u8   kanal aktif (1 = Cz-A1, 2 = Cz-A2, 0 = input dihubung-singkat)
  *   off 19 u8   PGA
  *   off 20 f32  µV per LSB di elektroda (sudah dibagi gain AD620)
- *   off 24 n × { u8 flag (bit0 = onset stimulus), i24 CH1, i24 CH2 }   ← i24 big-endian
- * CH1 selalu berisi kanal aktif, CH2 = 0.
+ *   off 24 n × i24 kanal aktif (big-endian)
+ *   lalu u8 k + k × u16 indeks sampel onset stimulus di paket ini
+ * 3 byte/sampel ≈ 45 KB/s pada 15 kSPS (v2: 7 byte/sampel dengan flag + CH2 kosong ≈ 105 KB/s).
  */
 
 #define ADS_SPS          15000    /* DRATE 0xE0; backend memakai Fs = 15000 */
 #define ADS_VREF         2.5f
 #define ADS_AMP_GAIN     20.0f    /* gain modul AD620 (ganti kalau RG diganti: G = 1 + 49.4k/RG) */
 #define ADS_PGA_DEFAULT  1
-#define ADS_PKT_SAMPLES  150      /* 10 ms per pesan */
+#define ADS_PKT_SAMPLES  1500     /* 100 ms per pesan: 10 pesan/s */
 /* 1 = lewati cek ID saat init: streaming tetap jalan walau STATUS tidak terbaca 3
  * (mis. DOUT/CS bermasalah; data bisa 0 / -1). Hanya untuk uji koneksi ke backend. */
 #define ADS_SKIP_ID_CHECK 1
@@ -80,6 +81,10 @@ void ads_check(void);
 /* Scan AIN0..AIN7 terhadap AINCOM dan pasangan AIN0-AIN1 / AIN2-AIN3, buffer ON lalu OFF,
  * dalam volt di input ADC (sama dengan ADS1256_Channel_Scan.ino). */
 void ads_scan(void);
+
+/* Rekam AIN0−AINCOM 200 ms lalu log rata-rata, p-p, RMS AC dan frekuensi dominan
+ * (Goertzel 10 Hz..7 kHz) untuk membedakan dengung 50 Hz dari osilasi kHz. */
+void ads_dump(void);
 
 /* Ringkasan tiap 10 detik (DBG, hanya saat "debug on") + peringatan (selalu) (DRDY hilang,
  * sampel terlewat, paket gagal, onset tidak tertandai, saturasi) lewat LOG().

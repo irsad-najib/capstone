@@ -9,7 +9,7 @@ An ESP32-based EEG streaming system. The ESP32 reads brain signal data from an A
 ## Repository Layout
 
 - `esp/` — active ESP32 firmware (ESP-IDF via PlatformIO, env `esp32dev`): audio test, battery, WiFi portal, WSS
-- `esp-ads1256/` — copy of `esp/` with `ads1299.c` replaced by `ads1256.c` (ADS1256 module + 2× AD620, one channel per session at 15 kSPS, binary packet v2). Backend `processor.Fs` = 15000 matches this firmware; `esp/` (v1, 16 kHz) is rejected by the backend
+- `esp-ads1256/` — copy of `esp/` with `ads1299.c` replaced by `ads1256.c` (ADS1256 module + 2× AD620, one channel per session at 15 kSPS, binary packet v3: 3 B/sample + onset list, 100 ms per message; backend also accepts v2). Backend `processor.Fs` = 15000 matches this firmware; `esp/` (v1, 16 kHz) is rejected by the backend
 - `archive/` — inactive history: `Capstone/`, `ads1115/`, `ads-only/`, `ads1299/`, `backend/`, `esp32-dummy.py`
 - `archive/Capstone/` — original ESP32 firmware (PlatformIO/Arduino framework), described below
   - `src/sketch-capstone-1.ino` — single-file firmware (all logic here for now)

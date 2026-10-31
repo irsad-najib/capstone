@@ -228,3 +228,42 @@ func TestParseBinaryRejectsBadLength(t *testing.T) {
 		t.Fatal("pesan terpotong harus ditolak")
 	}
 }
+
+// binV3 membangun pesan biner versi 3: sampel i24 kanal aktif, lalu daftar onset.
+func binV3(samples []int32, onsets ...uint16) []byte {
+	msg := binV2(processor.Fs, 0.5)
+	msg[1] = 3
+	binary.LittleEndian.PutUint16(msg[2:], uint16(len(samples)))
+	for _, v := range samples {
+		msg = append(msg, byte(v>>16), byte(v>>8), byte(v))
+	}
+	msg = append(msg, byte(len(onsets)))
+	for _, o := range onsets {
+		msg = binary.LittleEndian.AppendUint16(msg, o)
+	}
+	return msg
+}
+
+func TestParseBinaryV3(t *testing.T) {
+	frames, err := parseBinary(binV3([]int32{1, -1, 0x7FFFFF, -0x800000}, 1, 3))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []int32{1, -1, 0x7FFFFF, -0x800000}
+	for i, f := range frames {
+		if f.Ch1 != want[i] || f.Ch2 != 0 || f.UV != 0.5 || f.Stim != (i == 1 || i == 3) {
+			t.Fatalf("frame %d = %+v", i, f)
+		}
+	}
+	if frames[1].TS-frames[0].TS != 1_000_000/processor.Fs {
+		t.Fatalf("selisih waktu %d µs", frames[1].TS-frames[0].TS)
+	}
+	bad := binV3([]int32{1, 2}, 5) // onset di luar paket
+	if _, err := parseBinary(bad); err == nil {
+		t.Fatal("onset di luar paket harus ditolak")
+	}
+	short := binV3([]int32{1, 2}, 1)
+	if _, err := parseBinary(short[:len(short)-1]); err == nil {
+		t.Fatal("pesan terpotong harus ditolak")
+	}
+}

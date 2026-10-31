@@ -65,6 +65,8 @@ type rawFrame struct {
 //	20 f32 µV per LSB di elektroda
 //
 // lalu n × { u8 flag (bit0 = onset stimulus), i24 CH1 big-endian, i24 CH2 big-endian }.
+// Versi 3 (esp-ads1256/, sekarang): header sama dengan v2, lalu n × i24 kanal aktif
+// (big-endian), lalu u8 k + k × u16 LE indeks sampel onset. 3 byte/sampel (v2: 7).
 // Laju sampel harus sama dengan processor.Fs, kalau tidak epoch dan latensi salah.
 const (
 	binMagic      = 0xEE
@@ -86,9 +88,9 @@ func parseBinary(raw []byte) ([]rawFrame, error) {
 	hdr, fs, uv := binHeaderV1, binFsV1, 0.0
 	switch raw[1] {
 	case 1:
-	case 2:
+	case 2, 3:
 		if len(raw) < binHeaderV2 {
-			return nil, errors.New("header biner v2 terpotong")
+			return nil, fmt.Errorf("header biner v%d terpotong", raw[1])
 		}
 		hdr = binHeaderV2
 		fs = int(binary.LittleEndian.Uint16(raw[16:18]))
@@ -103,10 +105,13 @@ func parseBinary(raw []byte) ([]rawFrame, error) {
 		return nil, fmt.Errorf("laju sampel device %d Hz, backend butuh %d Hz (firmware dan backend tidak cocok)", fs, processor.Fs)
 	}
 	n := int(binary.LittleEndian.Uint16(raw[2:4]))
+	t0 := int64(binary.LittleEndian.Uint64(raw[8:16]))
+	if raw[1] == 3 {
+		return parseV3(raw, n, t0, fs, uv)
+	}
 	if len(raw) != hdr+n*binSampleSize {
 		return nil, errors.New("panjang pesan biner tidak cocok")
 	}
-	t0 := int64(binary.LittleEndian.Uint64(raw[8:16]))
 	frames := make([]rawFrame, n)
 	for i := range frames {
 		p := raw[hdr+i*binSampleSize:]
@@ -117,6 +122,33 @@ func parseBinary(raw []byte) ([]rawFrame, error) {
 			Stim: p[0]&1 != 0,
 			UV:   uv,
 		}
+	}
+	return frames, nil
+}
+
+func parseV3(raw []byte, n int, t0 int64, fs int, uv float64) ([]rawFrame, error) {
+	tail := binHeaderV2 + 3*n
+	if len(raw) < tail+1 {
+		return nil, errors.New("panjang pesan biner tidak cocok")
+	}
+	k := int(raw[tail])
+	if len(raw) != tail+1+2*k {
+		return nil, errors.New("panjang pesan biner tidak cocok")
+	}
+	frames := make([]rawFrame, n)
+	for i := range frames {
+		frames[i] = rawFrame{
+			Ch1: be24(raw[binHeaderV2+3*i:]),
+			TS:  t0 + int64(i)*1_000_000/int64(fs),
+			UV:  uv,
+		}
+	}
+	for j := 0; j < k; j++ {
+		idx := int(binary.LittleEndian.Uint16(raw[tail+1+2*j:]))
+		if idx >= n {
+			return nil, fmt.Errorf("indeks onset %d di luar paket (%d sampel)", idx, n)
+		}
+		frames[idx].Stim = true
 	}
 	return frames, nil
 }
