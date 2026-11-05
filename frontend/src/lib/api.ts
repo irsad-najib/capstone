@@ -38,6 +38,8 @@ export interface DeviceDetail {
     uptime_ms?: number;
     bat_mv?: number;   // tegangan baterai (mV), tidak ada kalau baterai tidak terdeteksi
     bat_pct?: number;  // 0..100
+    ads?: boolean;     // ADS1256 terdeteksi (false = jangan mulai tes)
+    eeg_ch?: number;   // kanal EEG yang direkam: 1 = kiri, 2 = kanan
   };
   audio_test_at?: string;
 }

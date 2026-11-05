@@ -171,6 +171,7 @@ type deviceState struct {
 	audioSeen time.Time
 	frames    uint64
 	lastFrame time.Time
+	eegCh     uint8 // kanal aktif dari header paket v2/v3 (byte 18): 1 kiri, 2 kanan, 0 tidak diketahui
 }
 
 type Hub struct {
@@ -265,6 +266,22 @@ func (h *Hub) SendTo(device string, msg []byte) int {
 }
 
 // Send mengirim pesan ke semua device.
+// EEGChannel = kanal EEG aktif dari paket biner terakhir device (1 kiri, 2 kanan), 0 kalau
+// belum ada paket v2/v3. device kosong = device pertama yang diketahui.
+func (h *Hub) EEGChannel(device string) int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	if st, ok := h.state[device]; ok {
+		return int(st.eegCh)
+	}
+	if device == "" {
+		for _, st := range h.state {
+			return int(st.eegCh)
+		}
+	}
+	return 0
+}
+
 func (h *Hub) Send(msg []byte) int { return h.SendTo("", msg) }
 
 func (h *Hub) touch(id string, now time.Time) *deviceState {
@@ -387,6 +404,9 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		st := h.touch(deviceID, time.Now())
 		st.frames += uint64(len(frames))
 		st.lastFrame = st.lastSeen
+		if mt == websocket.BinaryMessage && len(raw) > 18 && raw[1] >= 2 {
+			st.eegCh = raw[18]
+		}
 		h.mu.Unlock()
 		if now := time.Now(); now.Sub(lastLog) >= time.Second {
 			if mt == websocket.BinaryMessage {

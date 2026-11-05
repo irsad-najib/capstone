@@ -89,6 +89,7 @@ export default function ScanPage() {
   const deviceList = devices.data?.devices ?? [];
   const deviceName = deviceList[0] ?? null;
   const battery = devices.data?.detail?.find(d => d.id === deviceName)?.audio_test?.bat_pct;
+  const adsMissing = devices.data?.detail?.find(d => d.id === deviceName)?.audio_test?.ads === false;
   const stimRunning = isLive && !!stim.data?.running;
   const db = pendingDb ?? stim.data?.db ?? settings.stimDb;
 
@@ -276,6 +277,9 @@ export default function ScanPage() {
             <span className="hidden sm:flex items-center gap-1.5 text-xs text-on-surface-variant truncate">
               <StatusDot ok={simulation ? null : !!deviceName} />
               <span className="font-mono truncate">{simulation ? "simulated device" : deviceName ?? "no device"}</span>
+              {!simulation && adsMissing && (
+                <span className="text-error font-semibold" title="ADS1256 tidak terdeteksi: cek kabel SPI dan daya modul">ADS tidak terdeteksi</span>
+              )}
               {!simulation && battery != null && (
                 <span className={`tabular-nums ${battery <= 15 ? "text-error font-semibold" : ""}`} title="Headset battery">{battery}%</span>
               )}

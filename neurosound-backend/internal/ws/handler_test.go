@@ -267,3 +267,19 @@ func TestParseBinaryV3(t *testing.T) {
 		t.Fatal("pesan terpotong harus ditolak")
 	}
 }
+
+func TestEEGChannelFromHeader(t *testing.T) {
+	_, hub, conn := newHubServer(t)
+	msg := binV3([]int32{1, 2, 3})
+	msg[18] = 2
+	if err := conn.WriteMessage(websocket.BinaryMessage, msg); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for hub.EEGChannel("") != 2 {
+		if time.Now().After(deadline) {
+			t.Fatalf("EEGChannel = %d, mau 2", hub.EEGChannel(""))
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}

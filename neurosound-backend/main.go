@@ -202,7 +202,15 @@ func (a *app) handleSave(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, map[string]any{"ok": true, "file": filename})
+	resp := map[string]any{"ok": true, "file": filename}
+	// Telinga yang dites harus cocok dengan kanal yang direkam ESP (1 = kiri, 2 = kanan).
+	// Hanya peringatan: wiring bisa sengaja terbalik, jadi sesi tetap disimpan.
+	if want := map[string]int{"left": 1, "right": 2}[meta.Ear]; want != 0 {
+		if got := a.hub.EEGChannel(meta.Device); got != 0 && got != want {
+			resp["warning"] = fmt.Sprintf("telinga %s tapi ESP merekam kanal %d (1 = kiri, 2 = kanan)", meta.Ear, got)
+		}
+	}
+	writeJSON(w, resp)
 }
 
 func (a *app) handleReset(w http.ResponseWriter, r *http.Request) {
