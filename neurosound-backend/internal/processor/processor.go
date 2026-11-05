@@ -279,6 +279,7 @@ func (p *Processor) SessionDocument(filename string) session.Document {
 		Quality:      result.Quality,
 		Status:       result.Status,
 		Analysis:     result.Analysis,
+		StimType:     p.stim,
 	}
 }
 
@@ -418,6 +419,20 @@ func round1(v float64) float64 {
 	return math.Round(v*10) / 10
 }
 
+var (
+	fnMu   sync.Mutex
+	fnLast int64
+)
+
+// FilenameNow memakai milidetik dan selalu naik, jadi dua simpan dalam satu detik tidak
+// menimpa satu sama lain.
 func FilenameNow() string {
-	return fmt.Sprintf("eeg_abr_%d.json", time.Now().Unix())
+	fnMu.Lock()
+	defer fnMu.Unlock()
+	ms := time.Now().UnixMilli()
+	if ms <= fnLast {
+		ms = fnLast + 1
+	}
+	fnLast = ms
+	return fmt.Sprintf("eeg_abr_%d.json", ms)
 }

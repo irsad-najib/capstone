@@ -211,7 +211,7 @@ function ResultsContent() {
                     <Row label="Saved at" mono={false} value={doc.saved_at ? new Date(doc.saved_at).toLocaleString() : "—"} />
                     <Row label="Device" value={<span className="text-xs">{doc.device || "—"}</span>} />
                     <Row label="Ear" mono={false} value={doc.ear ? (doc.ear === "left" ? "Left" : "Right") : "—"} />
-                    <Row label="Stimulus" mono={false} value={doc.stim_db ? `Tone burst, ${doc.stim_db} dB` : "—"} />
+                    <Row label="Stimulus" mono={false} value={doc.stim_db ? `${doc.stim_type === "burst" ? "Tone burst, " : doc.stim_type === "click" ? "Click, " : ""}${doc.stim_db} dB` : "—"} />
                     <Row label="Result" mono={false} value={<OutcomeChip outcome={outcome} />} />
                     <Row label="Normal" mono={false} value={<span className={normal.normal ? "text-secondary font-semibold" : "text-error font-semibold"}>{normal.normal ? "Yes" : "No"}</span>} />
                     {doc.note && <Row label="Note" mono={false} value={doc.note} />}

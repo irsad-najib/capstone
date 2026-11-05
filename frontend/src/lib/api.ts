@@ -16,10 +16,12 @@ export function backendUrl(): string {
 // ── Types ──────────────────────────────────────────────────────
 
 export interface HealthResponse {
-  status: "ok" | string;
+  status: "ok" | "degraded" | string;
   time: string;
   uptime_s?: number;
   mongo?: boolean;
+  dsp?: boolean;       // false = DSP worker tidak jalan (tidak ada rata-rata ABR)
+  dsp_error?: string;
 }
 
 /** Status per device dari /api/v1/devices (field `detail`) */
@@ -132,6 +134,7 @@ export interface SessionDetail {
   sampling_rate: number;
   epoch_ms: number;
   pre_stim_ms?: number;
+  stim_type?: "click" | "burst";
   abr_average: number[][];
   abr_snapshots?: Snapshot[] | null;
   snr?: number[];
@@ -260,23 +263,23 @@ export const api = {
 
   /** POST /api/v1/abr/save */
   saveSession: (meta: SaveRequest) =>
-    post<{ ok: boolean; file: string }>("/api/v1/abr/save", meta),
+    post<{ ok: boolean; file: string }>("/api/v1/abr/save", meta, true),
 
   /** POST /api/v1/reset */
-  reset: () => post<{ ok: boolean }>("/api/v1/reset"),
+  reset: () => post<{ ok: boolean }>("/api/v1/reset", undefined, true),
 
   /** GET /api/v1/stim */
   stim: () => get<StimState>("/api/v1/stim"),
 
   /** POST /api/v1/stim/start — kirim "on" ke ESP32 */
-  stimStart: () => post<StimState & { ok: boolean; sent: number }>("/api/v1/stim/start"),
+  stimStart: () => post<StimState & { ok: boolean; sent: number }>("/api/v1/stim/start", undefined, true),
 
   /** POST /api/v1/stim/stop — kirim "off" ke ESP32 */
-  stimStop: () => post<StimState & { ok: boolean; sent: number }>("/api/v1/stim/stop"),
+  stimStop: () => post<StimState & { ok: boolean; sent: number }>("/api/v1/stim/stop", undefined, true),
 
   /** POST /api/v1/stim/set */
   setDB: (db: number) =>
-    post<{ ok: boolean; db: number; sent: number }>("/api/v1/stim/set", { db }),
+    post<{ ok: boolean; db: number; sent: number }>("/api/v1/stim/set", { db }, true),
 
   // ── Admin (LOG_TOKEN) ──
   /** GET /api/v1/dummy */

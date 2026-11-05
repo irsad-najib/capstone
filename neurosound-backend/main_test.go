@@ -256,3 +256,47 @@ func TestDummyStartStop(t *testing.T) {
 		t.Errorf("processor frame_count = %d, generator frames = %d", got, st.Frames)
 	}
 }
+
+func TestMutatingEndpointsRequireToken(t *testing.T) {
+	a := newTestApp(t)
+	a.token = "rahasia"
+	routes := map[string]http.HandlerFunc{
+		"/api/v1/reset":      a.auth(a.handleReset),
+		"/api/v1/abr/save":   a.auth(a.handleSave),
+		"/api/v1/stim/set":   a.auth(a.handleStimSet),
+		"/api/v1/stim/start": a.auth(a.handleStimStart),
+		"/api/v1/stim/stop":  a.auth(a.handleStimStop),
+	}
+	for path, h := range routes {
+		if code := call(t, h, "POST", path, nil); code != http.StatusUnauthorized {
+			t.Errorf("%s tanpa token: %d, want 401", path, code)
+		}
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("POST", path, strings.NewReader("{}"))
+		req.Header.Set("X-Log-Token", "rahasia")
+		h(rec, req)
+		if rec.Code == http.StatusUnauthorized {
+			t.Errorf("%s dengan token benar masih 401", path)
+		}
+	}
+}
+
+func TestHealthDegradedWhenDSPMissing(t *testing.T) {
+	a := newTestApp(t)
+	a.dsp = dsp.NewRunner("python3", "/tidak/ada/dsp_worker.py")
+	var body map[string]any
+	if code := call(t, a.handleHealth, "GET", "/api/v1/health", &body); code != 200 || body["status"] != "degraded" || body["dsp"] != false {
+		t.Fatalf("DSP hilang harus degraded: %d %v", code, body)
+	}
+}
+
+func TestFilenameNowUniqueWithinSameInstant(t *testing.T) {
+	seen := map[string]bool{}
+	for i := 0; i < 200; i++ {
+		f := processor.FilenameNow()
+		if seen[f] {
+			t.Fatalf("nama file bentrok: %s", f)
+		}
+		seen[f] = true
+	}
+}

@@ -63,7 +63,7 @@ export default function DevicePage() {
   const stim    = useBackend(api.stim, 5_000);
   const raw     = useRawPeak();
 
-  const online = health.data?.status === "ok" && !health.error;
+  const online = (health.data?.status === "ok" || health.data?.status === "degraded") && !health.error;
   const detail = devices.data?.detail ?? [];
   const connected = detail.filter(d => d.connected);
   const now = devices.data?.at ?? 0;
@@ -185,6 +185,7 @@ export default function DevicePage() {
               <Row label="Trials averaged" value={(abr.data?.trial_count ?? 0).toLocaleString()} />
               <Row label="Stimulus" value={stim.data ? (stim.data.running ? `running, ${stim.data.db} dB` : `idle, ${stim.data.db} dB`) : "—"} />
               <Row label="MongoDB" value={health.data ? (health.data.mongo ? "on" : "off (files only)") : "—"} />
+              <Row label="DSP worker" value={health.data ? (health.data.dsp === false ? `off: ${health.data.dsp_error ?? "tidak jalan"}` : "on") : "—"} />
             </dl>
           </Card>
         </div>
@@ -193,8 +194,8 @@ export default function DevicePage() {
           <Card title="Hardware">
             <dl className="divide-y divide-outline-variant/50 -my-2.5">
               <Row label="ADC" value="ADS1256 + AD620, 24-bit" />
-              <Row label="Gain / Vref" value="×24 / 4.5 V" />
-              <Row label="Resolution" value="0.0224 µV/LSB" />
+              <Row label="Gain / Vref" value="×20 / 2.5 V (PGA 1)" />
+              <Row label="Resolution" value="0.0298 µV/LSB" />
               <Row label="Sampling rate" value={abr.data ? `${abr.data.sampling_rate.toLocaleString()} Hz` : "—"} />
               <Row label="Channels" value={abr.data ? `${abr.data.abr_average.length}` : "—"} />
               <Row label="Epoch" value={abr.data ? `${abr.data.epoch_ms} ms (${abr.data.pre_stim_ms ?? 10} pre)` : "—"} />

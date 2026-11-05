@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import TopBar from "@/components/TopBar";
 import { Button, Card, Field, Footer, Page, Segmented, Toggle, inputClass } from "@/components/ui";
 import { MIN_TRIALS } from "@/lib/abr";
@@ -14,6 +14,9 @@ const TEST_LEVELS = [70, 60, 50, 40, 30, 20];
 export default function SettingsPage() {
   const s = useSettings();
   const [notifyMsg, setNotifyMsg] = useState<string | null>(null);
+  // Ketikan ditahan di sini; dibatasi ke rentang hanya saat selesai (blur), bukan tiap tombol.
+  const [trialsDraft, setTrialsDraft] = useState(String(s.targetTrials));
+  useEffect(() => { setTrialsDraft(String(s.targetTrials)); }, [s.targetTrials]);
 
   async function toggleNotifications(on: boolean) {
     setNotifyMsg(null);
@@ -79,8 +82,17 @@ export default function SettingsPage() {
               <input
                 id="target-trials"
                 type="number" min={MIN_TRIALS} max={5000} step={50}
-                value={s.targetTrials}
-                onChange={e => writeSettings({ targetTrials: Math.max(MIN_TRIALS, Math.min(5000, Number(e.target.value) || DEFAULT_SETTINGS.targetTrials)) })}
+                value={trialsDraft}
+                onChange={e => {
+                  setTrialsDraft(e.target.value);
+                  const n = Number(e.target.value);
+                  if (n >= MIN_TRIALS && n <= 5000) writeSettings({ targetTrials: n });
+                }}
+                onBlur={() => {
+                  const n = Math.max(MIN_TRIALS, Math.min(5000, Number(trialsDraft) || DEFAULT_SETTINGS.targetTrials));
+                  setTrialsDraft(String(n));
+                  writeSettings({ targetTrials: n });
+                }}
                 className={`${inputClass} w-32 font-mono tabular-nums`}
               />
             </Field>

@@ -34,6 +34,7 @@ var logsPage []byte
 
 type app struct {
 	proc   *processor.Processor
+	dsp    *dsp.Runner
 	store  *session.Store
 	hub    *ws.Hub
 	dummy  *dummy.Generator
@@ -76,7 +77,7 @@ func main() {
 	}
 	defer store.Close(context.Background())
 
-	a := &app{proc: proc, store: store, abrSSE: abrSSE, rawSSE: rawSSE, token: os.Getenv("LOG_TOKEN"),
+	a := &app{proc: proc, dsp: runner, store: store, abrSSE: abrSSE, rawSSE: rawSSE, token: os.Getenv("LOG_TOKEN"),
 		start: time.Now(), stim: stimState{DB: defaultStimDB}}
 	a.hub = ws.NewHub(proc, abrSSE, rawSSE)
 	a.dummy = dummy.New(proc)
@@ -107,12 +108,12 @@ func main() {
 	mux.HandleFunc("/api/v1/health", a.handleHealth)
 	mux.HandleFunc("/api/v1/devices", a.handleDevices)
 	mux.HandleFunc("/api/v1/abr", a.handleABR)
-	mux.HandleFunc("/api/v1/abr/save", a.handleSave)
-	mux.HandleFunc("/api/v1/reset", a.handleReset)
+	mux.HandleFunc("/api/v1/abr/save", a.auth(a.handleSave))
+	mux.HandleFunc("/api/v1/reset", a.auth(a.handleReset))
 	mux.HandleFunc("/api/v1/stim", a.handleStim)
-	mux.HandleFunc("/api/v1/stim/set", a.handleStimSet)
-	mux.HandleFunc("/api/v1/stim/start", a.handleStimStart)
-	mux.HandleFunc("/api/v1/stim/stop", a.handleStimStop)
+	mux.HandleFunc("/api/v1/stim/set", a.auth(a.handleStimSet))
+	mux.HandleFunc("/api/v1/stim/start", a.auth(a.handleStimStart))
+	mux.HandleFunc("/api/v1/stim/stop", a.auth(a.handleStimStop))
 	mux.HandleFunc("/api/v1/broadcast", a.auth(a.handleBroadcast))
 	mux.HandleFunc("/api/v1/command", a.auth(a.handleCommand))
 	mux.HandleFunc("/api/v1/dummy", a.auth(a.handleDummy))
@@ -152,12 +153,22 @@ func (a *app) tickStreams() {
 }
 
 func (a *app) handleHealth(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, map[string]any{
-		"status":   "ok",
+	// "degraded" = server hidup tetapi DSP worker tidak bisa dijalankan (tidak ada rata-rata ABR).
+	status, dspErr := "ok", ""
+	if err := a.dsp.Check(); err != nil {
+		status, dspErr = "degraded", err.Error()
+	}
+	resp := map[string]any{
+		"status":   status,
 		"time":     time.Now().Format(time.RFC3339),
 		"uptime_s": int(time.Since(a.start).Seconds()),
 		"mongo":    a.store.MongoEnabled(),
-	})
+		"dsp":      dspErr == "",
+	}
+	if dspErr != "" {
+		resp["dsp_error"] = dspErr
+	}
+	writeJSON(w, resp)
 }
 
 func (a *app) handleDevices(w http.ResponseWriter, r *http.Request) {

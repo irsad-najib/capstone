@@ -9,7 +9,7 @@ export default function SystemMonitor() {
   const devices = useBackend(api.devices, 5_000);
   const stim    = useBackend(api.stim, 5_000);
 
-  const online = health.data?.status === "ok" && !health.error;
+  const online = (health.data?.status === "ok" || health.data?.status === "degraded") && !health.error;
   const ids = devices.data?.devices ?? [];
 
   const rows = [

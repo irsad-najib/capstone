@@ -22,6 +22,7 @@ type Document struct {
 	Device       string          `json:"device,omitempty" bson:"device,omitempty"`
 	Ear          string          `json:"ear,omitempty" bson:"ear,omitempty"`
 	StimDB       int             `json:"stim_db,omitempty" bson:"stim_db,omitempty"`
+	StimType     string          `json:"stim_type,omitempty" bson:"stim_type,omitempty"` // "click" / "burst"
 	Note         string          `json:"note,omitempty" bson:"note,omitempty"`
 	ABRAverage   [][]float64     `json:"abr_average" bson:"abr_average"`
 	ABRSnapshots []Snapshot      `json:"abr_snapshots" bson:"abr_snapshots"`

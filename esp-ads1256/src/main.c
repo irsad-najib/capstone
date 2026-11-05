@@ -41,7 +41,9 @@
  *   l <dBFS>          level (0..-120), mis. "l -20"
  *   +  / -            naik / turun 1 dB  (++ / -- = 10 dB)
  *   c L|R|B           channel kiri / kanan / dua-duanya (L/R juga memilih kanal rekam ADS)
- *   cal [L|R <dB>]    redaman kalibrasi per driver (≤ 0, default L -5.5 / R 0), tanpa argumen = tampilkan
+ *   cal [L|R <dB>]    redaman kalibrasi per driver (≤ 0, default L -5.5 / R 0), tanpa argumen = tampilkan.
+ *                     Nilai yang diset TERSIMPAN di NVS dan dipakai lagi setelah restart.
+ *   cal reset         hapus nilai tersimpan, kembali ke CAL_L_DB / CAL_R_DB
  *   b [ms] [per_s]    tone burst di f & l saat ini: naik/turun 2 siklus, datar ms
  *                     (default b 2000 = burst uji 2 s). per_s > 0 = berulang,
  *                     mis. "b 0.5 20" = burst 2-1-2 di 2 kHz, 20 kali/detik
@@ -77,6 +79,7 @@
 #include "driver/gpio.h"
 #include "esp_timer.h"
 #include "esp_system.h"
+#include "nvs.h"
 #include "net.h"
 #include "battery.h"
 #include "ads1256.h"
@@ -429,6 +432,45 @@ static void set_cal(int ch, float db)
     else            { g_cal_r_db = db; g_cal_r = powf(10.0f, db / 20.0f); }
 }
 
+/* Kalibrasi tersimpan di NVS (mili-dB, int32) supaya "cal L x" bertahan setelah restart. */
+#define NVS_CAL_NS "cal"
+static void cal_save(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(NVS_CAL_NS, NVS_READWRITE, &h) == ESP_OK) {
+        nvs_set_i32(h, "l_mdb", (int32_t)lroundf(g_cal_l_db * 1000.0f));
+        nvs_set_i32(h, "r_mdb", (int32_t)lroundf(g_cal_r_db * 1000.0f));
+        nvs_commit(h);
+        nvs_close(h);
+    }
+}
+
+static bool cal_load(void)
+{
+    nvs_handle_t h;
+    bool got = false;
+    if (nvs_open(NVS_CAL_NS, NVS_READONLY, &h) == ESP_OK) {
+        int32_t l, r;
+        if (nvs_get_i32(h, "l_mdb", &l) == ESP_OK && nvs_get_i32(h, "r_mdb", &r) == ESP_OK) {
+            set_cal(CH_L, l / 1000.0f);
+            set_cal(CH_R, r / 1000.0f);
+            got = true;
+        }
+        nvs_close(h);
+    }
+    return got;
+}
+
+static void cal_clear(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(NVS_CAL_NS, NVS_READWRITE, &h) == ESP_OK) {
+        nvs_erase_all(h);
+        nvs_commit(h);
+        nvs_close(h);
+    }
+}
+
 static void set_level(float db)
 {
     if (db > LEVEL_MAX_DBFS) db = LEVEL_MAX_DBFS;
@@ -526,10 +568,17 @@ static void handle_line(char *line)
     } else if (!strcmp(cmd, "cal")) {
         char ch = 0;
         float db = 0;
-        if (sscanf(line, "%*s %c %f", &ch, &db) == 2) {
+        if (strstr(line, "reset")) {
+            cal_clear();
+            set_cal(CH_L, CAL_L_DB);
+            set_cal(CH_R, CAL_R_DB);
+            LOG("CAL", "nilai tersimpan dihapus, kembali ke bawaan");
+        } else if (sscanf(line, "%*s %c %f", &ch, &db) == 2) {
             if      (ch == 'L' || ch == 'l') set_cal(CH_L, db);
             else if (ch == 'R' || ch == 'r') set_cal(CH_R, db);
-            else { LOG("ERR", "pakai cal L <dB> / cal R <dB>"); return; }
+            else { LOG("ERR", "pakai cal L <dB> / cal R <dB> / cal reset"); return; }
+            cal_save();
+            LOG("CAL", "tersimpan di NVS (berlaku juga setelah restart)");
         }
         LOG("CAL", "L %.1f dB (×%.3f)  R %.1f dB (×%.3f)", g_cal_l_db, g_cal_l, g_cal_r_db, g_cal_r);
     } else if (!strcmp(cmd, "debug")) {
@@ -838,6 +887,7 @@ void app_main(void)
     LOG("INFO", "pembagi 22k/(330∥1k) = %.1f dB, DAC full scale %.1f Vrms", DIVIDER_DB, DAC_FS_VRMS);
     set_cal(CH_L, CAL_L_DB);
     set_cal(CH_R, CAL_R_DB);
+    if (cal_load()) LOG("INFO", "kalibrasi dari NVS (cal reset = kembali ke bawaan)");
     LOG("INFO", "kalibrasi driver L %.1f dB (×%.3f)  R %.1f dB (×%.3f)", g_cal_l_db, g_cal_l, g_cal_r_db, g_cal_r);
 
     remote_q = xQueueCreate(4, 64);   /* sebelum WiFi: callback WS bisa datang kapan saja */

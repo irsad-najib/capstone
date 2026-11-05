@@ -2,7 +2,7 @@
  * Helper ABR yang dipakai banyak halaman: sumbu waktu epoch, klasifikasi
  * hasil, dan penyaringan gelombang. Aturan mengikuti neurosound-backend:
  *   - status DSP: Noise (<100 trial) → Terbentuk → Konvergen (≥500 & r≥0.9)
- *   - verdict: Pass jika Konvergen, SNR ≥ 3 dB, dan gelombang I/III/V terdeteksi
+ *   - verdict: Pass (lolos skrining) jika Konvergen, gelombang V terdeteksi, dan kontrol pra-stimulus lolos
  *   - normal: Pass dan interpeak I-III / III-V / I-V di rentang normal dewasa
  */
 import type { Analysis, WaveInfo } from "@/lib/api";

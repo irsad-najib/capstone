@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"sync"
@@ -66,6 +67,20 @@ func NewRunner(pythonPath, scriptPath string) *Runner {
 
 // RunDSP memproses satu epoch lewat worker persisten, atau satu proses
 // dsp_worker.py kalau worker tidak bisa dipakai.
+// Check memastikan skrip DSP ada dan interpreter Python bisa ditemukan.
+func (r *Runner) Check() error {
+	if r == nil {
+		return nil // tidak dikonfigurasi (mis. test)
+	}
+	if _, err := os.Stat(r.ScriptPath); err != nil {
+		return fmt.Errorf("skrip DSP tidak ditemukan: %s", r.ScriptPath)
+	}
+	if _, err := exec.LookPath(r.PythonPath); err != nil {
+		return fmt.Errorf("interpreter Python tidak ditemukan: %s", r.PythonPath)
+	}
+	return nil
+}
+
 func (r *Runner) RunDSP(input EpochInput) (*DSPResult, error) {
 	inputJSON, err := json.Marshal(input)
 	if err != nil {
