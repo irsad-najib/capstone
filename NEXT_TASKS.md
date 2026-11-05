@@ -1,4 +1,4 @@
-# Next tasks (per 31 Okt 2026)
+# Next tasks (diperbarui 5 Nov 2026)
 
 Konteks: firmware `esp-ads1256/` (ADS1256 15 kSPS + 2× AD620), backend `neurosound-backend/`, server `capstone.irsad.site`.
 
@@ -11,6 +11,25 @@ Konteks: firmware `esp-ads1256/` (ADS1256 15 kSPS + 2× AD620), backend `neuroso
 | Backend (commit `0304f94`, sudah di server) | artifact rejection, r split-half, SNR ± average, deteksi III/I relatif V, Pass = Konvergen + V. Verdict server 6/8 benar (lama 3/8), positif palsu 0 |
 | Excel validasi | `~/Downloads/NeuroSound_Validasi_DSP.xlsx`, `NeuroSound_Validasi_DSP_Sebelum_Sesudah.xlsx`, `NeuroSound_TesA_tanpa_sinyal.xlsx` |
 | Firmware terbaru | **belum di-commit** (lihat tugas 1) |
+
+## Temuan 5 Nov 2026 (cakupan: skrining Pass/Refer saja)
+
+**Status kode (commit lokal/remote): firmware, backend, frontend sudah menyatu; backend produksi harus di-deploy ulang.**
+- Firmware: `DB_AT_0DBFS = 72` (ukur dB meter, tone 1 kHz), stimulus ABR default tone burst 2-1-2 di 1 kHz (`st click` untuk klik), `cal L/R <dB>` tersimpan di NVS (`cal reset` = bawaan -5.5 / 0), fail-safe stimulus (WS putus > 3 s atau > 10 menit).
+- Backend: analisis mengikuti jenis stimulus (`stim` dari status ESP), kontrol pra-stimulus (daya respons >= 2x daya pra-stimulus), endpoint tulis (`stim/*`, `reset`, `abr/save`) butuh `LOG_TOKEN`, nama file sesi unik, health `degraded` bila DSP worker hilang, sesi menyimpan `stim_type`.
+- Frontend: level 20-70 dB, urutan tes 70/60/50, per telinga "Normal/Refer"; halaman Scan butuh admin token di Settings (endpoint tulis diproteksi).
+
+**Hasil rekaman klik 80 nominal, telinga kiri, 5 menit (`tools/analysis/replay.py`):** 3128 stimulus, 2531 ditolak artefak, 597 trial, Konvergen, r 0.849, SNR 10.5 dB. Backend lama = Pass; **backend baru = Refer** karena daya di jendela respons = 1.0x daya sebelum stimulus. Penyebab: hum 100 Hz terkunci stimulus (periode 90 ms = 9 siklus), bukan respons saraf. Pass lama itu positif palsu.
+
+**Batasan yang harus ditulis di laporan:**
+- Deteksi respons NYATA belum divalidasi pada subjek; kontrol baru hanya terbukti menolak positif palsu pada data ini. Ambang 2x dan jendela burst (respons 2-14 ms, V 6-13 ms) adalah perkiraan.
+- Noise ~2.2 mV per epoch vs ABR ~0.5 uV; 597 trial belum menutup selisih itu.
+- Laju sampel efektif ~11.5 kHz (ISR menolak sebagian tepi DRDY), backend mengasumsikan 15 kHz, sumbu waktu terkompresi ~23% (latensi V bergeser).
+- Level dalam dB nominal (SPL tone 1 kHz, dB meter tidak dikopel ke telinga), bukan dB nHL; norma klik 85 dB nHL di backend tidak setara. Selisih driver L/R diselaraskan lewat `cal`.
+- Stimulus mengikuti kelipatan 5 ms, periode 90 ms terkunci ke 100 Hz mains; jitter ISI di firmware belum ada.
+- Perbandingan dengan MindRove dan data publik belum dilakukan (password WiFi MindRove hilang).
+
+**Belum dikerjakan:** sham run (earphone dilepas), rekaman tone burst di level 70, deploy backend ke produksi, jitter ISI di firmware, perbaikan fs efektif.
 
 ## Tugas
 
@@ -49,9 +68,9 @@ Sampel `0xFFFFFF` sudah ditahan (sampel sebelumnya), tapi `0x7FFFFF` / `0x800000
 - Pertimbangkan penyimpanan hasil validasi di repo (folder `docs/` atau `tests/`) supaya bisa direproduksi. Skrip dan data ada di scratchpad sesi ini dan tidak ikut repo.
 
 ### 7. Frontend / alur uji
-- `Start test` sudah otomatis: kanan lalu kiri, level 80 → 60 → 40 dB, auto-save setelah trial ≥ target dan 5 detik settle. Tampilkan peringatan jika `ads:false` di `/api/v1/devices`.
+- `Start test` sudah otomatis: kanan lalu kiri, level 70 → 60 → 50 dB (sejak 5 Nov), auto-save setelah trial ≥ target dan 5 detik settle. Tampilkan peringatan jika `ads:false` di `/api/v1/devices`.
 - Backend memvalidasi byte kanal paket (off 18) terhadap telinga yang dites (belum).
-- Kalibrasi level: `DB_AT_0DBFS = 90` belum terkalibrasi. Selisih kiri-kanan driver ukuran lapangan 3–5.5 dB; firmware sekarang kiri −5.5 dB (`cal L <dB>` untuk menyetel). Ukur ulang dengan tone kontinu 1 kHz, posisi mic sama.
+- Kalibrasi level (SUDAH diperbarui 5 Nov, lihat "Temuan 5 Nov"): dulu `DB_AT_0DBFS = 90` belum terkalibrasi. Selisih kiri-kanan driver ukuran lapangan 3–5.5 dB; firmware sekarang kiri −5.5 dB (`cal L <dB>` untuk menyetel). Ukur ulang dengan tone kontinu 1 kHz, posisi mic sama.
 - Admin: slider kecepatan dummy 1–20× sudah ada; data ESP diabaikan selama dummy jalan.
 
 ### 8. Dokumen
