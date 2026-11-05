@@ -470,6 +470,12 @@ func (h *Hub) handleTyped(deviceID, typ string, raw []byte) {
 		st.audio = append(json.RawMessage(nil), raw...)
 		st.audioSeen = now
 		h.mu.Unlock()
+		var as struct {
+			Stim string `json:"stim"`
+		}
+		if json.Unmarshal(raw, &as) == nil {
+			h.proc.SetStim(as.Stim)
+		}
 	case "hello":
 		h.Logs.Add(deviceID, "[server] hello")
 	default:

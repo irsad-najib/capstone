@@ -49,8 +49,30 @@ var (
 	minLatI    = 0.8                  // sebelum ini: artefak stimulus
 )
 
+// Stimulus tone burst (2-1-2 siklus di 1 kHz): norma di atas (klik 85 dB nHL) tidak berlaku.
+// Latensi V lebih lama dan I/III tidak terpecah jelas, jadi hanya V yang dicari di jendela
+// yang lebih lebar dan interpeak tidak dinilai. Batas ini PERKIRAAN dari pola umum ABR
+// tone burst (V ~7-10 ms di 1 kHz) dan BELUM divalidasi dengan data subjek/alat ini.
+var bandVBurst = [2]float64{6.0, 13.0}
+
+// MinPrePostRatio: daya rata-rata di jendela respons harus ≥ ini × daya di jendela pra-stimulus
+// (sama-sama dari rata-rata epoch). Hum mains yang terkunci ke periode stimulus ada di kedua
+// jendela dengan daya sama (rasio ≈ 1) sehingga tidak lolos; respons nyata hanya ada setelah onset.
+const MinPrePostRatio = 2.0
+
 func Compute(avg []float64, fs int, snr float64, status string) Detail {
-	waves := detectWaves(avg, fs)
+	return ComputeFor(avg, nil, fs, snr, status, "click")
+}
+
+// ComputeFor = Compute dengan jenis stimulus ("click" / "burst") dan segmen pra-stimulus rata-rata
+// (pre, boleh nil = kontrol pra-stimulus dilewati). stim kosong dianggap klik.
+func ComputeFor(avg, pre []float64, fs int, snr float64, status, stim string) Detail {
+	burst := stim == "burst"
+	band := bandV
+	if burst {
+		band = bandVBurst
+	}
+	waves := detectWaves(avg, fs, band, !burst)
 	interpeak := map[string]float64{}
 	lat := map[string]float64{}
 	for _, w := range waves {
@@ -73,7 +95,26 @@ func Compute(avg []float64, fs int, snr float64, status string) Detail {
 	if status == "Konvergen" && lat["V"] > 0 {
 		verdict = "Pass"
 	}
-	normal, reasons := classify(verdict, status, snr, waves, interpeak)
+	ratio, controlFailed := prePostControl(avg, pre, fs, band)
+	if verdict == "Pass" && controlFailed {
+		verdict = "Refer"
+	}
+	var normal bool
+	var reasons []string
+	switch {
+	case controlFailed:
+		reasons = []string{fmt.Sprintf("kontrol pra-stimulus gagal: daya respons hanya %.1f× daya sebelum stimulus (butuh ≥ %.1f×), kemungkinan interferensi terkunci stimulus (hum mains)", ratio, MinPrePostRatio)}
+	case burst:
+		// Interpeak klik tidak berlaku; tidak ada norma burst yang tervalidasi → tidak diberi label normal.
+		normal = false
+		if verdict == "Pass" {
+			reasons = []string{"tone burst: hanya gelombang V yang dinilai, norma interpeak klik tidak berlaku"}
+		} else {
+			_, reasons = classify(verdict, status, snr, waves, interpeak)
+		}
+	default:
+		normal, reasons = classify(verdict, status, snr, waves, interpeak)
+	}
 	return Detail{Waves: waves, Interpeak: interpeak, Verdict: verdict, Normal: normal, Reasons: reasons}
 }
 
@@ -101,15 +142,39 @@ func classify(verdict, status string, snr float64, waves []WaveInfo, interpeak m
 	return len(reasons) == 0, reasons
 }
 
-func detectWaves(avg []float64, fs int) []WaveInfo {
+// prePostControl membandingkan daya rata-rata di jendela respons (panjang sama dengan pre,
+// mulai dari band[0]) dengan daya segmen pra-stimulus. failed = rasio < MinPrePostRatio.
+// pre kosong atau data tidak cukup → kontrol dilewati (failed=false).
+func prePostControl(avg, pre []float64, fs int, band [2]float64) (ratio float64, failed bool) {
+	n := len(pre)
+	start := int(band[0] / 1000 * float64(fs))
+	if n == 0 || fs <= 0 || start+n > len(avg) {
+		return 0, false
+	}
+	var pp, pr float64
+	for i := 0; i < n; i++ {
+		pp += pre[i] * pre[i]
+		pr += avg[start+i] * avg[start+i]
+	}
+	if pp == 0 {
+		return 0, false
+	}
+	ratio = pr / pp
+	return ratio, ratio < MinPrePostRatio
+}
+
+func detectWaves(avg []float64, fs int, band [2]float64, withIIIandI bool) []WaveInfo {
 	if len(avg) == 0 || fs <= 0 {
 		return nil
 	}
-	v, ok := peakIn(avg, fs, bandV[0], bandV[1])
+	v, ok := peakIn(avg, fs, band[0], band[1])
 	if !ok {
 		return nil
 	}
 	vMs := float64(v) / float64(fs) * 1000
+	if !withIIIandI {
+		return []WaveInfo{wave("V", v, avg, fs)}
+	}
 	out := make([]WaveInfo, 0, 3)
 	if i, ok := peakIn(avg, fs, math.Max(minLatI, vMs-bandIToV[1]), vMs-bandIToV[0]); ok {
 		out = append(out, wave("I", i, avg, fs))

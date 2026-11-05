@@ -128,3 +128,43 @@ func TestVerdictPassWithOnlyWaveV(t *testing.T) {
 		t.Fatalf("verdict %s normal %v, want Pass dan tidak normal (interpeak tidak dinilai): %+v", d.Verdict, d.Normal, d)
 	}
 }
+
+func TestBurstUsesWiderVBandAndSkipsInterpeak(t *testing.T) {
+	avg := synth(800, map[float64]float64{10.0: 0.5}) // V di 10 ms: di luar band klik, di dalam band burst
+	if d := Compute(avg, fs, 6, "Konvergen"); d.Verdict == "Pass" && len(d.Waves) > 0 && d.Waves[len(d.Waves)-1].Latency > 9.5 {
+		t.Fatalf("klik tidak boleh menemukan V di 10 ms: %+v", d)
+	}
+	d := ComputeFor(avg, nil, fs, 6, "Konvergen", "burst")
+	if d.Verdict != "Pass" || len(d.Waves) != 1 || d.Waves[0].Name != "V" {
+		t.Fatalf("burst: harus Pass dengan satu gelombang V, dapat %+v", d)
+	}
+	if d.Normal || len(d.Interpeak) != 0 {
+		t.Fatalf("burst: tidak boleh diberi label normal/interpeak klik: %+v", d)
+	}
+}
+
+func TestPrePostControlRejectsLockedHum(t *testing.T) {
+	pre := make([]float64, 150) // 10 ms @ 15 kHz
+	avg := make([]float64, 800)
+	for i := range pre {
+		pre[i] = math.Sin(2 * math.Pi * 100 * float64(i) / fs) // hum 100 Hz sama di pra dan pasca
+	}
+	for i := range avg {
+		avg[i] = math.Sin(2 * math.Pi * 100 * float64(i) / fs)
+	}
+	d := ComputeFor(avg, pre, fs, 6, "Konvergen", "click")
+	if d.Verdict != "Refer" || len(d.Reasons) == 0 {
+		t.Fatalf("hum terkunci harus gagal kontrol pra-stimulus: %+v", d)
+	}
+}
+
+func TestPrePostControlPassesRealResponse(t *testing.T) {
+	pre := make([]float64, 150) // pra-stimulus tenang
+	for i := range pre {
+		pre[i] = 0.01 * math.Sin(float64(i))
+	}
+	avg := synth(800, map[float64]float64{1.6: 0.3, 3.7: 0.25, 5.6: 0.5})
+	if d := ComputeFor(avg, pre, fs, 6, "Konvergen", "click"); d.Verdict != "Pass" {
+		t.Fatalf("respons nyata harus lolos kontrol: %+v", d)
+	}
+}

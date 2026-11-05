@@ -25,6 +25,10 @@ const (
 	// Jendela respons untuk r split-half dan SNR: 1-10 ms setelah onset (gelombang I-V).
 	respFromMs = 1.0
 	respToMs   = 10.0
+	// Tone burst 2-1-2 di 1 kHz: respons lebih lambat dan stimulus sendiri 5 ms.
+	// PERKIRAAN, belum divalidasi dengan data alat ini.
+	respFromMsBurst = 2.0
+	respToMsBurst   = 14.0
 
 	// Status: Noise < MinTrials; Konvergen ≥ ConvergeTrials dan r split-half ≥ ConvergeR.
 	// Dua rata-rata berisi noise saja: r di 1-10 ms bersimpangan ±0.19 (~27 derajat bebas
@@ -91,6 +95,8 @@ type Processor struct {
 	snr        []float64
 	pearson    float64
 	status     string
+	stim       string // "click" / "burst" (dari status ESP); "" = belum diketahui = klik
+	stimMixed  bool   // jenis stimulus berganti saat sudah ada trial di rata-rata ini
 	snapshots  []session.Snapshot
 	lastRaw    RawResult
 }
@@ -219,9 +225,24 @@ func (p *Processor) Raw(windowMs float64) RawResult {
 	return p.rawResultLocked(windowMs)
 }
 
+// SetStim mencatat jenis stimulus yang sedang diputar ESP. Rata-rata tidak direset otomatis;
+// kalau jenisnya berganti saat sudah ada trial, rata-rata ditandai tercampur (hasil tidak Pass).
+func (p *Processor) SetStim(kind string) {
+	if kind != "click" && kind != "burst" {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.stim != "" && p.stim != kind && p.trials > 0 {
+		p.stimMixed = true
+	}
+	p.stim = kind
+}
+
 func (p *Processor) Reset() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	p.stim, p.stimMixed = "", false
 	p.ring.Clear()
 	p.pendingStims = nil
 	p.avgCh1 = make([]float64, epochSamples)
@@ -264,7 +285,11 @@ func (p *Processor) SessionDocument(filename string) session.Document {
 func (p *Processor) resultLocked() Result {
 	avg := p.copyAvgLocked()
 	// Epoch dimulai PreStimMs sebelum stimulus; latensi gelombang dihitung dari onset.
-	detail := analysis.Compute(p.avgCh1[preSamples:], p.cfg.Fs, p.snr[0], p.status)
+	detail := analysis.ComputeFor(p.avgCh1[preSamples:], p.avgCh1[:preSamples], p.cfg.Fs, p.snr[0], p.status, p.stim)
+	if p.stimMixed {
+		detail.Verdict, detail.Normal = "Refer", false
+		detail.Reasons = append([]string{"jenis stimulus (klik/burst) berganti di tengah rata-rata; reset lalu ulangi"}, detail.Reasons...)
+	}
 	return Result{
 		TrialCount:   p.trials,
 		ABRAverage:   avg,
@@ -304,8 +329,12 @@ func (p *Processor) splitStatsLocked() (r, snr float64) {
 	if p.nA == 0 || p.nB == 0 {
 		return 0, 0
 	}
-	from := preSamples + int(respFromMs*float64(p.cfg.Fs)/1000)
-	to := preSamples + int(respToMs*float64(p.cfg.Fs)/1000)
+	rf, rt := respFromMs, respToMs
+	if p.stim == "burst" {
+		rf, rt = respFromMsBurst, respToMsBurst
+	}
+	from := preSamples + int(rf*float64(p.cfg.Fs)/1000)
+	to := preSamples + int(rt*float64(p.cfg.Fs)/1000)
 	a := make([]float64, to-from)
 	b := make([]float64, to-from)
 	var ps, pn float64
