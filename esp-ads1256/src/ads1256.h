@@ -65,6 +65,10 @@ int  ads_channel(void);
 void ads_set_pga(int pga);
 void ads_set_buffer(bool on);
 
+/* Uji: ISR DRDY menerima semua tepi turun (filter derau hanya dihitung). */
+void ads_set_isr_loose(bool on);
+bool ads_isr_loose(void);
+
 /* Input dihubung-singkat (MUX AIN0−AIN0) untuk cek noise ADC tanpa AD620. */
 void ads_short(bool on);
 

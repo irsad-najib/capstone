@@ -76,6 +76,7 @@
 #include "driver/i2s_std.h"
 #include "driver/gpio.h"
 #include "esp_timer.h"
+#include "esp_system.h"
 #include "net.h"
 #include "battery.h"
 #include "ads1256.h"
@@ -98,6 +99,11 @@
 #define LEVEL_MAX_DBFS  0.0f
 #define STATUS_PERIOD_US 5000000
 #define BAT_LOG_US       300000000LL   /* 5 menit */
+/* Fail-safe stimulus yang dinyalakan dari backend: perintah "off" bisa hilang kalau WebSocket
+ * sedang putus (perintah tidak diantre), jadi stimulus mati sendiri. Stimulus yang dinyalakan
+ * lewat serial tidak terpengaruh. */
+#define STIM_WS_LOSS_US  3000000LL     /* WS putus selama ini */
+#define STIM_MAX_US      600000000LL   /* atau sudah menyala selama ini (10 menit) */
 /* Level dB (dari frontend / perintah db) yang dipetakan ke 0 dBFS. BELUM TERKALIBRASI:
  * ganti dengan hasil pengukuran (SLM / ambang normal) sebelum angka dB dipakai di laporan. */
 #define DB_AT_0DBFS     90.0f
@@ -573,6 +579,8 @@ static void handle_line(char *line)
         else if (strstr(line, "buf off"))   ads_set_buffer(false);
         else if (strstr(line, "short on"))  ads_short(true);
         else if (strstr(line, "short off")) ads_short(false);
+        else if (strstr(line, "loose on"))  { ads_set_isr_loose(true);  LOG("ADS", "ISR DRDY LONGGAR: semua tepi turun diterima"); }
+        else if (strstr(line, "loose off")) { ads_set_isr_loose(false); LOG("ADS", "ISR DRDY ketat (filter aktif)"); }
         ads_print_status();
         return;
     } else if (!strcmp(cmd, "b")) {
@@ -637,6 +645,26 @@ static void handle_line(char *line)
     } else if (!strcmp(cmd, "bat")) {
         print_battery();
         return;
+    } else if (!strcmp(cmd, "net") && strstr(line, "test")) {
+        net_selftest();
+        return;
+    } else if (!strcmp(cmd, "net") && strstr(line, "bench")) {
+        /* Uji laju kirim WS murni: 1 MB pesan biner dummy (magic 0x00, ditolak backend),
+         * pertama dengan akuisisi berhenti, lalu dengan akuisisi jalan. */
+        static uint8_t dummy[4500];
+        for (int pass = 0; pass < 2; pass++) {
+            bool was = ads_running();
+            if (pass == 0) ads_stop();
+            int ok = 0;
+            int64_t t0 = esp_timer_get_time();
+            for (int i = 0; i < 220; i++) ok += net_ws_send_bin(dummy, sizeof(dummy));
+            float s_el = (esp_timer_get_time() - t0) / 1e6f;
+            LOG("BENCH", "%s: %d/220 pesan 4.5 KB dalam %.2f s = %.0f KB/s",
+                pass == 0 ? "ADS berhenti" : "ADS jalan  ", ok, s_el, ok * 4.5f / s_el);
+            if (pass == 0 && was) ads_start();
+            if (pass == 1 && !was) break;
+        }
+        return;
     } else if (!strcmp(cmd, "net")) {
         net_print_status();
         return;
@@ -691,14 +719,39 @@ static void console_task(void *arg)
     char line[64];
     int  len = 0;
     int64_t next_status = esp_timer_get_time() + STATUS_PERIOD_US;
+    bool    from_remote = false;      /* perintah terakhir datang dari backend */
+    bool    was_stim = false, stim_remote = false;
+    int64_t stim_since_us = 0, ws_down_us = 0;
 
     for (;;) {
         auto_tick();
 
         char remote[64];
         if (xQueueReceive(remote_q, remote, 0) == pdTRUE) {
-            if (g_remote_ok) handle_line(remote);
+            if (g_remote_ok) { from_remote = true; handle_line(remote); }
             else LOG("REMOTE", "diabaikan: %s", remote);
+        }
+
+        /* Fail-safe stimulus dari backend (lihat STIM_WS_LOSS_US). */
+        bool stim_on = g_mode == MODE_ABR ? g_abr_on : g_on;
+        int64_t now_us = esp_timer_get_time();
+        if (stim_on && !was_stim) { stim_remote = from_remote; stim_since_us = now_us; ws_down_us = 0; }
+        if (!stim_on) { stim_remote = false; ws_down_us = 0; }
+        was_stim = stim_on;
+        if (stim_on && stim_remote) {
+            if (net_ws_connected()) ws_down_us = 0;
+            else if (!ws_down_us)   ws_down_us = now_us;
+            const char *why = NULL;
+            if (ws_down_us && now_us - ws_down_us > STIM_WS_LOSS_US) why = "WebSocket putus";
+            else if (now_us - stim_since_us > STIM_MAX_US)           why = "batas waktu 10 menit";
+            if (why) {
+                auto_mode   = AUTO_NONE;
+                g_abr_on    = false;
+                g_on        = false;
+                g_burst_rep = false;
+                stim_remote = false;
+                LOG("ABR", "stimulus dimatikan otomatis (%s)", why);
+            }
         }
 
         if (esp_timer_get_time() >= next_status) {
@@ -746,6 +799,7 @@ static void console_task(void *arg)
             if (len > 0) {
                 line[len] = '\0';
                 printf("\n");
+                from_remote = false;
                 handle_line(line);
                 len = 0;
             }
@@ -760,21 +814,59 @@ static void console_task(void *arg)
     }
 }
 
+#define STAGE_GAP_MS 400
+
+static void boot_stage(const char *name)
+{
+    LOG("BOOT", "--- tahap %s  heap=%lu (terendah %lu)", name,
+        (unsigned long)esp_get_free_heap_size(),
+        (unsigned long)esp_get_minimum_free_heap_size());
+}
+
 void app_main(void)
 {
     setvbuf(stdin, NULL, _IONBF, 0);
     net_log_init();
     net_debug_load();
     printf("\n=== NeuroSound ESP32 (stimulus + ABR) ===\n");
+    static const char *rr[] = { "?", "POWERON", "EXT", "SW", "PANIC", "INT_WDT", "TASK_WDT", "WDT",
+                                "DEEPSLEEP", "BROWNOUT", "SDIO" };
+    esp_reset_reason_t why = esp_reset_reason();
+    LOG("INFO", "penyebab reset: %s%s", why < sizeof(rr) / sizeof(rr[0]) ? rr[why] : "lain",
+        why == ESP_RST_BROWNOUT ? "  (tegangan anjlok: catu/baterai kurang kuat)" : "");
     LOG("INFO", "pembagi 22k/(330∥1k) = %.1f dB, DAC full scale %.1f Vrms", DIVIDER_DB, DAC_FS_VRMS);
     set_cal(CH_L, CAL_L_DB);
     set_cal(CH_R, CAL_R_DB);
     LOG("INFO", "kalibrasi driver L %.1f dB (×%.3f)  R %.1f dB (×%.3f)", g_cal_l_db, g_cal_l, g_cal_r_db, g_cal_r);
 
-    remote_q = xQueueCreate(4, 64);
+    remote_q = xQueueCreate(4, 64);   /* sebelum WiFi: callback WS bisa datang kapan saja */
 
+    gpio_set_direction(PIN_BOOT, GPIO_MODE_INPUT);
+    gpio_set_pull_mode(PIN_BOOT, GPIO_PULLUP_ONLY);
+    vTaskDelay(pdMS_TO_TICKS(50));
+    if (gpio_get_level(PIN_BOOT) == 0) net_forget_wifi();
+
+    /* Nyala bertahap supaya lonjakan arus tidak menumpuk (brownout → bootloop):
+     * 1 WiFi+WS → 2 tes jaringan → 3 I2S+baterai → 4 ADS+task. Jeda = catu menstabil. */
+    boot_stage("1/4 WiFi + WebSocket");
+    bool wifi_ok = net_start(on_remote_command);   /* blok s/d ~15 detik per SSID */
+
+    boot_stage("2/4 tes jaringan");
+    if (wifi_ok) {
+        vTaskDelay(pdMS_TO_TICKS(STAGE_GAP_MS));
+        if (!net_selftest())
+            LOG("BOOT", "PERINGATAN: jaringan belum memenuhi syarat streaming, lanjut tetap");
+    } else {
+        LOG("BOOT", "WiFi belum tersambung (mode portal), tes dilewati");
+    }
+
+    boot_stage("3/4 I2S + baterai");
+    vTaskDelay(pdMS_TO_TICKS(STAGE_GAP_MS));
     i2s_init();
     battery_init();
+
+    boot_stage("4/4 ADS + task");
+    vTaskDelay(pdMS_TO_TICKS(STAGE_GAP_MS));
     ads_init();
     bool have_ads = ads_present();
     xTaskCreatePinnedToCore(audio_task,   "audio",   4096, NULL, 10, NULL, 0);
@@ -785,11 +877,5 @@ void app_main(void)
     else          LOG("MODE", "tone, tanpa suara sampai diketik on");
     print_status();
     print_help();
-
-    gpio_set_direction(PIN_BOOT, GPIO_MODE_INPUT);
-    gpio_set_pull_mode(PIN_BOOT, GPIO_PULLUP_ONLY);
-    vTaskDelay(pdMS_TO_TICKS(50));
-    if (gpio_get_level(PIN_BOOT) == 0) net_forget_wifi();
-
-    net_start(on_remote_command);   /* blok s/d ~15 detik per percobaan */
+    boot_stage("selesai");
 }

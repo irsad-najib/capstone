@@ -2,8 +2,8 @@
  * (TLS) ke backend lewat Cloudflare.
  *
  * Urutan boot:
- *   1. Kredensial dari NVS ("wifi-cfg"), kalau kosong pakai DEFAULT_SSID
- *   2. Gagal konek dalam STA_TIMEOUT_MS → AP "ESP32-Setup" / "12345678"
+ *   1. DEFAULT_SSID (hotspot uji) lebih dulu, lalu kredensial dari NVS ("wifi-cfg")
+ *   2. Semua gagal dalam STA_TIMEOUT_MS → AP "ESP32-Setup" / "12345678"
  *      + DNS hijack + portal di http://4.3.2.1. Simpan → restart
  *   3. Dapat IP → buka NET_WS_URI. Reconnect WiFi & WS otomatis
  *
@@ -31,6 +31,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
+#include "freertos/semphr.h"
+#include "ping/ping_sock.h"
 #include "esp_wifi.h"
 #include "esp_event.h"
 #include "esp_netif.h"
@@ -47,8 +49,14 @@
 
 #define AP_SSID          "ESP32-Setup"
 #define AP_PASS          "12345678"
-#define DEFAULT_SSID     ""           /* isi untuk fallback sebelum portal */
+/* Hotspot uji, dicoba lebih dulu (lalu kredensial NVS, lalu portal). Diisi lewat
+ * src/wifi_default.h (di-gitignore, contoh: wifi_default.example.h); kosong = lewati. */
+#if __has_include("wifi_default.h")
+#include "wifi_default.h"
+#else
+#define DEFAULT_SSID     ""
 #define DEFAULT_PASS     ""
+#endif
 #define STA_TIMEOUT_MS   15000
 #define NVS_NS           "wifi-cfg"
 #define PORTAL_IP_BYTES  4, 3, 2, 1          /* jawaban DNS */
@@ -202,7 +210,7 @@ static void ws_start(void)
         .network_timeout_ms   = 10000,
         .ping_interval_sec    = 15,   /* Cloudflare menutup koneksi idle */
         .task_stack           = 6144,
-        .buffer_size          = 2048,
+        .buffer_size          = 6144,   /* > satu paket v3 (~4.6 KB): satu frame, tidak dipecah */
         /* Core 1 hampir penuh oleh akuisisi ADS (15k RDATA/s); TLS di sana membuat IDLE1
          * kelaparan (task_wdt) dan WS putus. Satukan dengan WiFi & send_task di core 0. */
         .task_core_id_set     = true,
@@ -230,7 +238,9 @@ bool net_ws_send(const char *text, size_t len)
 bool net_ws_send_bin(const void *data, size_t len)
 {
     if (!net_ws_connected()) return false;
-    return esp_websocket_client_send_bin(ws, data, len, pdMS_TO_TICKS(200)) >= 0;
+    /* Timeout di tengah frame meninggalkan pesan setengah terkirim dan server memutus
+     * koneksi; lebih baik menunggu (antrian paket menampung 600 ms) daripada memotong. */
+    return esp_websocket_client_send_bin(ws, data, len, pdMS_TO_TICKS(5000)) >= 0;
 }
 
 /* ------------------------------------------------------------------ */
@@ -731,7 +741,7 @@ void net_debug_set(bool on)
     LOG("DEBUG", "mode debug %s (tersimpan, berlaku juga setelah restart)", on ? "NYALA" : "mati");
 }
 
-void net_start(net_cmd_cb_t on_command)
+bool net_start(net_cmd_cb_t on_command)
 {
     cmd_cb     = on_command;
     net_events = xEventGroupCreate();
@@ -754,20 +764,111 @@ void net_start(net_cmd_cb_t on_command)
     ESP_ERROR_CHECK(esp_wifi_start());
     portal_mode = false;
 
+    if (DEFAULT_SSID[0] && sta_connect(DEFAULT_SSID, DEFAULT_PASS)) return true;
+
     char ssid[33] = { 0 }, pass[65] = { 0 };
     if (load_creds(ssid, sizeof(ssid), pass, sizeof(pass))) {
-        if (sta_connect(ssid, pass)) return;
+        if (strcmp(ssid, DEFAULT_SSID) != 0 && sta_connect(ssid, pass)) return true;
     } else {
         LOG("WIFI", "belum ada kredensial tersimpan");
     }
-
-    if (DEFAULT_SSID[0] && strcmp(ssid, DEFAULT_SSID) != 0) {
-        if (sta_connect(DEFAULT_SSID, DEFAULT_PASS)) {
-            save_creds(DEFAULT_SSID, DEFAULT_PASS);
-            return;
-        }
-    }
     portal_start();
+    return false;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Tes jaringan (tahap 2 boot)                                        */
+/* ------------------------------------------------------------------ */
+#define TEST_PING_COUNT   10
+#define TEST_MIN_KBPS     60.0f   /* kebutuhan ADS ≈ 46 KB/s + margin */
+#define TEST_WS_WAIT_MS   10000
+#define TEST_SEND_MS      8000
+#define TEST_PKT_BYTES    4500
+#define TEST_PKT_COUNT    60
+
+typedef struct {
+    volatile uint32_t ok, lost, rtt_sum, rtt_max;
+    SemaphoreHandle_t done;
+} ping_acc_t;
+
+static void ping_ok_cb(esp_ping_handle_t h, void *arg)
+{
+    ping_acc_t *a = arg;
+    uint32_t t = 0;
+    esp_ping_get_profile(h, ESP_PING_PROF_TIMEGAP, &t, sizeof(t));
+    a->ok++;
+    a->rtt_sum += t;
+    if (t > a->rtt_max) a->rtt_max = t;
+}
+static void ping_timeout_cb(esp_ping_handle_t h, void *arg) { (void)h; ((ping_acc_t *)arg)->lost++; }
+static void ping_end_cb(esp_ping_handle_t h, void *arg)     { (void)h; xSemaphoreGive(((ping_acc_t *)arg)->done); }
+
+bool net_selftest(void)
+{
+    bool pass = true;
+    LOG("TEST", "=== tes jaringan ===");
+
+    /* 1) WebSocket harus sudah terbuka. */
+    int64_t t0 = esp_timer_get_time();
+    while (!net_ws_connected() && (esp_timer_get_time() - t0) / 1000 < TEST_WS_WAIT_MS)
+        vTaskDelay(pdMS_TO_TICKS(100));
+    bool ws_ok = net_ws_connected();
+    LOG("TEST", "WS: %s (%.1f s)", ws_ok ? "tersambung" : "BELUM tersambung",
+        (esp_timer_get_time() - t0) / 1e6f);
+    if (!ws_ok) pass = false;
+
+    /* 2) Ping gateway: loss dan jitter jalur WiFi. */
+    esp_netif_ip_info_t ip;
+    if (!sta_netif || esp_netif_get_ip_info(sta_netif, &ip) != ESP_OK || ip.gw.addr == 0) {
+        LOG("TEST", "ping: tidak ada gateway");
+        return false;
+    }
+    ping_acc_t acc = { .done = xSemaphoreCreateBinary() };
+    esp_ping_config_t pc = ESP_PING_DEFAULT_CONFIG();
+    pc.count       = TEST_PING_COUNT;
+    pc.interval_ms = 100;
+    pc.timeout_ms  = 1000;
+    pc.task_stack_size = 3072;
+    ip_addr_set_ip4_u32(&pc.target_addr, ip.gw.addr);
+    esp_ping_callbacks_t cbs = {
+        .on_ping_success = ping_ok_cb, .on_ping_timeout = ping_timeout_cb,
+        .on_ping_end = ping_end_cb,    .cb_args = &acc,
+    };
+    esp_ping_handle_t ph;
+    if (esp_ping_new_session(&pc, &cbs, &ph) == ESP_OK) {
+        esp_ping_start(ph);
+        xSemaphoreTake(acc.done, pdMS_TO_TICKS(TEST_PING_COUNT * 1200 + 1000));
+        esp_ping_stop(ph);
+        esp_ping_delete_session(ph);
+        LOG("TEST", "ping gateway " IPSTR ": %lu/%d balasan, rata-rata %lu ms, maks %lu ms",
+            IP2STR(&ip.gw), (unsigned long)acc.ok, TEST_PING_COUNT,
+            (unsigned long)(acc.ok ? acc.rtt_sum / acc.ok : 0), (unsigned long)acc.rtt_max);
+        if (acc.ok < TEST_PING_COUNT) pass = false;
+    } else {
+        LOG("TEST", "ping: gagal membuat sesi");
+        pass = false;
+    }
+    vSemaphoreDelete(acc.done);
+
+    /* 3) Laju kirim WS: pesan biner dummy (magic 0x00, ditolak backend). */
+    if (ws_ok) {
+        static uint8_t dummy[TEST_PKT_BYTES];   /* nol semua */
+        int sent = 0;
+        int64_t ts = esp_timer_get_time();
+        for (int i = 0; i < TEST_PKT_COUNT; i++) {
+            if ((esp_timer_get_time() - ts) / 1000 > TEST_SEND_MS) break;
+            if (!net_ws_send_bin(dummy, sizeof(dummy))) break;
+            sent++;
+        }
+        float el   = (esp_timer_get_time() - ts) / 1e6f;
+        float kbps = el > 0 ? sent * (TEST_PKT_BYTES / 1000.0f) / el : 0;
+        LOG("TEST", "laju kirim WS: %d/%d pesan 4.5 KB dalam %.2f s = %.0f KB/s (min %.0f)",
+            sent, TEST_PKT_COUNT, el, kbps, TEST_MIN_KBPS);
+        if (kbps < TEST_MIN_KBPS) pass = false;
+    }
+
+    LOG("TEST", "=== hasil: %s ===", pass ? "LOLOS" : "TIDAK LOLOS");
+    return pass;
 }
 
 /* ------------------------------------------------------------------ */

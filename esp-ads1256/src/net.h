@@ -4,15 +4,20 @@
 #include "esp_timer.h"
 
 #define NET_DEVICE_ID   "esp32-audio-001"
-#define NET_WS_URI      "wss://capstone.irsad.site/ws?id=" NET_DEVICE_ID
+#define NET_WS_URI      "ws://capstone.irsad.site/ws?id=" NET_DEVICE_ID
 
 /* Dipanggil dari task WebSocket saat backend kirim {"type":"command","cmd":"..."}.
  * {"cmd":"set_db","value":N} dari /api/v1/stim/set diteruskan sebagai perintah "db N". */
 typedef void (*net_cmd_cb_t)(const char *cmd);
 
-/* Init WiFi. Coba kredensial NVS → default → kalau gagal, buka AP + captive portal.
- * Blok maksimal ~15 detik selama mencoba konek. */
-void net_start(net_cmd_cb_t on_command);
+/* Init WiFi. Coba SSID default → kredensial NVS → kalau gagal, buka AP + captive portal.
+ * Blok maksimal ~15 detik per percobaan. true = tersambung STA (WS dibuka otomatis),
+ * false = masuk mode portal. */
+bool net_start(net_cmd_cb_t on_command);
+
+/* Tes jaringan sebelum perangkat keras lain dinyalakan: tunggu WS, ping gateway,
+ * ukur laju kirim WS. true = lolos (tanpa loss, laju cukup untuk 15 kSPS ≈ 46 KB/s). */
+bool net_selftest(void);
 
 bool net_ws_send(const char *text, size_t len);
 bool net_ws_send_bin(const void *data, size_t len);

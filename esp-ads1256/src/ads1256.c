@@ -68,7 +68,7 @@
 #define PKT_HDR        24
 #define PKT_ONSET_MAX  16       /* onset per paket 100 ms (stimulus 11/s → biasanya 1-2) */
 #define PKT_BYTES      (PKT_HDR + ADS_PKT_SAMPLES * 3 + 1 + 2 * PKT_ONSET_MAX)
-#define N_PKT          6        /* 600 ms cadangan saat jaringan lambat */
+#define N_PKT          12       /* 1.2 s cadangan saat jaringan tersendat */
 
 typedef struct {
     uint16_t len;
@@ -94,9 +94,12 @@ static volatile uint32_t s_sent, s_send_fail, s_offline;
 static volatile int32_t  s_last;
 static volatile uint32_t s_drdy_edges;   /* pulsa DRDY saat interrupt nyala, untuk cek laju */
 static volatile uint32_t s_glitches;     /* tepi turun palsu di DRDY yang ditolak ISR */
+static volatile uint32_t s_gl_high, s_gl_gap;   /* rinci: DRDY sudah HIGH saat ISR / jarak < MIN_EDGE_US */
+static volatile uint32_t s_gap_min_us = 0xFFFF; /* jarak terkecil antar-ISR yang ditolak karena jarak */
 static volatile uint32_t s_badreads;
 static volatile uint32_t s_send_max_us, s_send_tot_ms;   /* waktu net_ws_send_bin */     /* RDATA 0xFFFFFF (DOUT tidak di-drive), diganti sampel sebelumnya */
 static volatile int64_t  s_last_edge;
+static volatile bool     s_isr_loose;    /* uji: terima semua tepi turun, filter hanya dihitung */
 static volatile uint32_t s_rd_max_us;    /* waktu RDATA terlama per periode ringkasan */
 static volatile int32_t  s_min, s_max;   /* rentang per periode ringkasan, direset ads_poll */
 static volatile int64_t  s_sum;
@@ -219,9 +222,19 @@ static void IRAM_ATTR drdy_isr(void *arg)
     /* Saat SPI aktif, SCLK/CS bisa menginduksi tepi turun palsu di kabel DRDY. Tepi asli
      * membuat DRDY tetap LOW sampai data dibaca; tepi palsu sudah HIGH lagi saat ISR jalan. */
     int64_t now = esp_timer_get_time();
-    if (!DRDY_IS_LOW() || now - s_last_edge < MIN_EDGE_US) {
+    bool loose = s_isr_loose;   /* loose: hitung yang akan ditolak, tapi tetap diterima */
+    if (!DRDY_IS_LOW()) {
         s_glitches++;
-        return;
+        s_gl_high++;
+        if (!loose) return;
+    } else {
+        int64_t gap = now - s_last_edge;
+        if (gap < MIN_EDGE_US) {
+            s_glitches++;
+            s_gl_gap++;
+            if (gap >= 0 && (uint32_t)gap < s_gap_min_us) s_gap_min_us = (uint32_t)gap;
+            if (!loose) return;
+        }
     }
     s_last_edge = now;
     s_drdy_edges++;
@@ -261,6 +274,39 @@ static void flush_pkt(void)
     cur = NULL;
 }
 
+/* Tambah satu sampel ke paket berjalan (buka paket baru kalau perlu). t_us = waktu
+ * sampel ini, dipakai sebagai waktu paket kalau sampel ini yang pertama. */
+static void push_sample(const uint8_t raw[3], bool flag, int64_t t_us, uint32_t *seq)
+{
+    if (!cur) {
+        if (xQueueReceive(free_q, &cur, 0) != pdTRUE) {
+            cur = NULL;
+            s_dropped++;
+            (*seq)++;
+            return;
+        }
+        cur_n = 0;
+        uint8_t *h = cur->data;
+        uint16_t fs  = ADS_SPS;
+        float    uv  = uv_per_lsb();
+        cur->n_on = 0;
+        h[0] = 0xEE;
+        h[1] = 3;
+        memcpy(h + 4, seq, 4);
+        memcpy(h + 8, &t_us, 8);
+        memcpy(h + 16, &fs, 2);
+        h[18] = s_short ? 0 : (uint8_t)s_ch;
+        h[19] = (uint8_t)s_pga;
+        memcpy(h + 20, &uv, 4);
+    }
+    memcpy(cur->data + PKT_HDR + cur_n * 3, raw, 3);   /* kanal aktif, i24 big-endian */
+    if (flag && cur->n_on < PKT_ONSET_MAX) cur->on[cur->n_on++] = (uint16_t)cur_n;
+    (*seq)++;
+    if (++cur_n == ADS_PKT_SAMPLES) flush_pkt();
+}
+
+#define FILL_MAX 32   /* DRDY terlewat sampai segini diisi sampel sebelumnya */
+
 static void ads_task(void *arg)
 {
     (void)arg;
@@ -276,20 +322,31 @@ static void ads_task(void *arg)
         }
         if (!held) { spi_device_acquire_bus(spi_fast, portMAX_DELAY); held = true; }
         if (n == 0) { s_timeouts++; continue; }
+        int64_t t_us = esp_timer_get_time();
         if (n > 1) {
-            /* Ada DRDY terlewat: tutup paket supaya waktu tiap sampel tetap benar. */
-            flush_pkt();
+            /* DRDY terlewat. Sedikit: isi dengan sampel sebelumnya supaya paket tetap penuh
+             * dan waktunya kontinu (menutup paket tiap kali terlewat memecah 1500 sampel
+             * jadi ratusan pesan kecil). Banyak: tutup paket, waktu lanjut di paket baru. */
             s_missed += n - 1;
-            seq += n - 1;
+            if (n - 1 <= FILL_MAX && s_samples) {
+                uint8_t prev[3] = { (uint8_t)(s_last >> 16), (uint8_t)(s_last >> 8), (uint8_t)s_last };
+                for (uint32_t k = 1; k < n; k++)
+                    push_sample(prev, false, t_us - (int64_t)(n - k) * 1000000 / ADS_SPS, &seq);
+            } else {
+                flush_pkt();
+                seq += n - 1;
+            }
         }
 
-        int64_t t_us = esp_timer_get_time();
         uint8_t raw[3];
         int32_t v = rdata(raw);
         /* 0xFFFFFF = DOUT tidak di-drive saat dibaca (baca bertabrakan dengan update data).
          * Dengan offset AD620 ~1.5 V nilai −1 LSB praktis tidak pernah sah: tahan sampel
          * sebelumnya supaya tidak muncul lonjakan −75 mV di epoch. */
-        if (v == -1 && s_samples) {
+        /* Nilai skala penuh 0x7FFFFF / 0x800000 (±250 mV di elektroda) juga salah-baca
+         * bus (lolos ±2×/detik): dengan sinyal AD620 ±mV nilai ini tidak pernah sah,
+         * jadi ditahan sama seperti 0xFFFFFF. */
+        if ((v == -1 || v == 0x7FFFFF || v == -0x800000) && s_samples) {
             v = s_last;
             raw[0] = (uint8_t)(v >> 16); raw[1] = (uint8_t)(v >> 8); raw[2] = (uint8_t)v;
             s_badreads++;
@@ -312,32 +369,7 @@ static void ads_task(void *arg)
         s_sum_n++;
         s_samples++;
 
-        if (!cur) {
-            if (xQueueReceive(free_q, &cur, 0) != pdTRUE) {
-                cur = NULL;
-                s_dropped++;
-                seq++;
-                continue;
-            }
-            cur_n = 0;
-            uint8_t *h = cur->data;
-            uint16_t fs  = ADS_SPS;
-            float    uv  = uv_per_lsb();
-            cur->n_on = 0;
-            h[0] = 0xEE;
-            h[1] = 3;
-            memcpy(h + 4, &seq, 4);
-            memcpy(h + 8, &t_us, 8);
-            memcpy(h + 16, &fs, 2);
-            h[18] = s_short ? 0 : (uint8_t)s_ch;
-            h[19] = (uint8_t)s_pga;
-            memcpy(h + 20, &uv, 4);
-        }
-        memcpy(cur->data + PKT_HDR + cur_n * 3, raw, 3);   /* kanal aktif, i24 big-endian */
-        if (flag && cur->n_on < PKT_ONSET_MAX) cur->on[cur->n_on++] = (uint16_t)cur_n;
-        seq++;
-
-        if (++cur_n == ADS_PKT_SAMPLES) flush_pkt();
+        push_sample(raw, flag, t_us, &seq);
     }
 }
 
@@ -558,6 +590,9 @@ bool ads_present(void) { return s_present; }
 bool ads_running(void) { return s_running; }
 int  ads_channel(void) { return s_ch; }
 
+void ads_set_isr_loose(bool on) { s_isr_loose = on; }
+bool ads_isr_loose(void)       { return s_isr_loose; }
+
 void ads_start(void)
 {
     if (!s_present || s_running) return;
@@ -610,10 +645,14 @@ void ads_short(bool on)
     reconfigure();
 }
 
-/* Rentang DC aman di input ADC: buffer ON 0..AVDD−2 V, OFF 0..AVDD (diberi margin). */
+/* Offset DC selisih (AIN+ − AIN−) harus jauh dari skala penuh ±2·VREF/PGA (diberi margin 60%).
+ * Yang dinilai SELISIH, bukan tegangan pin: AIN− tidak harus di GND (di unit ini AIN1 ≈ 1.6 V,
+ * jadi selisih ≈ −0.2 V itu wajar). Tegangan tiap pin terhadap AINCOM dilihat lewat "ads scan";
+ * buffer ON butuh tiap pin di 0..3 V. */
 static bool dc_ok(float v)
 {
-    return s_buffer ? (v > 0.3f && v < 2.7f) : (v > 0.1f && v < 4.9f);
+    float lim = 0.4f * 2.0f * ADS_VREF / (float)s_pga;
+    return v > -lim && v < lim;
 }
 
 void ads_print_status(void)
@@ -654,7 +693,7 @@ void ads_print_status(void)
 bool ads_poll(uint32_t onsets_played)
 {
     static int64_t  next_us, last_us, next_probe_us, next_warn_us = MISSING_WARN_US;
-    static uint32_t l_smp, l_miss, l_drop, l_to, l_stim, l_sent, l_fail, l_off, l_onset, l_gl;
+    static uint32_t l_smp, l_miss, l_drop, l_to, l_stim, l_sent, l_fail, l_off, l_onset, l_gl, l_gl_high, l_gl_gap, l_bad;
     static bool     was_running;
     int64_t now = esp_timer_get_time();
 
@@ -677,7 +716,7 @@ bool ads_poll(uint32_t onsets_played)
         last_us = now;
         l_smp = s_samples; l_miss = s_missed; l_drop = s_dropped; l_to = s_timeouts;
         l_stim = s_stims; l_sent = s_sent; l_fail = s_send_fail; l_off = s_offline; l_onset = onsets_played;
-        l_gl = s_glitches; s_rd_max_us = 0;
+        l_gl = s_glitches; l_gl_high = s_gl_high; l_gl_gap = s_gl_gap; l_bad = s_badreads; s_gap_min_us = 0xFFFF; s_rd_max_us = 0;
     }
     was_running = s_running;
     if (!s_running || now < next_us) return false;
@@ -687,21 +726,22 @@ bool ads_poll(uint32_t onsets_played)
     uint32_t drop = s_dropped - l_drop, stim = s_stims - l_stim;
     uint32_t sent = s_sent - l_sent,    fail = s_send_fail - l_fail, off = s_offline - l_off;
     uint32_t onset = onsets_played - l_onset, gl = s_glitches - l_gl, rd_max = s_rd_max_us;
+    uint32_t gl_high = s_gl_high - l_gl_high, gl_gap = s_gl_gap - l_gl_gap, gap_min = s_gap_min_us, bad = s_badreads - l_bad;
     float    sps = smp * 1e6f / (float)(now - last_us);
     l_smp = s_samples; l_miss = s_missed; l_drop = s_dropped; l_to = s_timeouts;
     l_stim = s_stims; l_sent = s_sent; l_fail = s_send_fail; l_off = s_offline; l_onset = onsets_played;
-    l_gl = s_glitches; s_rd_max_us = 0;
+    l_gl = s_glitches; l_gl_high = s_gl_high; l_gl_gap = s_gl_gap; l_bad = s_badreads; s_gap_min_us = 0xFFFF; s_rd_max_us = 0;
     last_us = now;
 
-    const float uv = uv_per_lsb();
     int32_t mn = s_min, mx = s_max;
     float   dc = s_sum_n ? (float)((double)s_sum / s_sum_n) * v_per_lsb(s_pga) : 0.0f;
     s_range_reset = true;
 
-    DBG("ADS", "%.0f SPS  %s %.0f..%.0f µV  DC %.3f V  onset %lu/%lu  paket %lu  RDATA maks %lu µs  derau DRDY %lu",
-        sps, ch_label(), mn * uv, mx * uv, dc,
-        (unsigned long)stim, (unsigned long)onset, (unsigned long)sent,
-        (unsigned long)rd_max, (unsigned long)gl);
+    DBG("ADS", "%.0f SPS%s DC %.3f V paket %lu RDATA %lu us rusak %lu | derau %lu: tinggi %lu rapat %lu min %lu us",
+        sps, s_isr_loose ? " LONGGAR" : "", dc,
+        (unsigned long)sent, (unsigned long)rd_max, (unsigned long)bad,
+        (unsigned long)gl, (unsigned long)gl_high, (unsigned long)gl_gap,
+        (unsigned long)(gap_min == 0xFFFF ? 0 : gap_min));
 
     if (smp == 0)
         LOG("ADS", "PERINGATAN: tidak ada DRDY (IO34). Cek catu modul, PDWN IO27, kabel DRDY");
@@ -720,8 +760,8 @@ bool ads_poll(uint32_t onsets_played)
         LOG("ADS", "PERINGATAN: %s saturasi (%s), turunkan PGA atau cek elektroda", ch_label(),
             mx > RAIL_COUNTS ? "+" : "−");
     if (smp && !s_short && !dc_ok(dc))
-        LOG("ADS", "PERINGATAN: level DC %.3f V di luar rentang input (buffer %s), atur trimpot nol AD620",
-            dc, s_buffer ? "ON 0.3..2.7 V" : "OFF 0.1..4.9 V");
+        LOG("ADS", "PERINGATAN: offset DC selisih %.3f V terlalu besar (batas ±%.1f V), atur trimpot nol AD620",
+            dc, 0.4f * 2.0f * ADS_VREF / (float)s_pga);
     return false;
 }
 
@@ -860,7 +900,8 @@ void ads_check(void)
         if (!ok) fails++;
     }
 
-    LOG("CHECK", "7/7 AD620  level DC CH1 / CH2 (harus di dalam rentang input, idealnya ~1.5 V)");
+    LOG("CHECK", "7/7 AD620  offset DC selisih CH1 / CH2 (AIN+ − AIN−; harus dekat 0, batas ±%.1f V)",
+        0.4f * 2.0f * ADS_VREF / (float)s_pga);
     for (int c = 1; c <= 2; c++) {
         if (!read_mux(c == 1 ? MUX_CH1 : MUX_CH2, 1000, &b)) { LOG("CHECK", "  DRDY timeout"); fails++; break; }
         float v = b.mean * vl;
