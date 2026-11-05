@@ -104,9 +104,10 @@
  * lewat serial tidak terpengaruh. */
 #define STIM_WS_LOSS_US  3000000LL     /* WS putus selama ini */
 #define STIM_MAX_US      600000000LL   /* atau sudah menyala selama ini (10 menit) */
-/* Level dB (dari frontend / perintah db) yang dipetakan ke 0 dBFS. BELUM TERKALIBRASI:
- * ganti dengan hasil pengukuran (SLM / ambang normal) sebelum angka dB dipakai di laporan. */
-#define DB_AT_0DBFS     90.0f
+/* Level dB (dari frontend / perintah db) yang dipetakan ke 0 dBFS. Hasil ukur dB meter
+ * (tone kontinu 1 kHz, 0 dBFS): kanan 72.5 dB, kiri 76 dB sebelum koreksi CAL_L_DB.
+ * Satuannya dB nominal (SPL tone), bukan dB nHL. */
+#define DB_AT_0DBFS     72.0f
 #define CLICK_SAMPLES   5          /* 104 µs @ 48 kHz */
 /* Kalibrasi driver (uji 29-10-2026): kiri ~5.5 dB lebih keras dari kanan, jadi kanal
  * kiri diturunkan. Hanya boleh ≤ 0 dB (redaman) supaya batas 0 dBFS tetap berlaku.
@@ -142,7 +143,7 @@ enum { STIM_CLICK, STIM_BURST };
 enum { POL_ALT, POL_COND, POL_RARE };
 static volatile int   g_mode      = MODE_TONE;
 static volatile bool  g_abr_on;
-static volatile int   g_stim_type = STIM_CLICK;
+static volatile int   g_stim_type = STIM_BURST;   /* default saat boot: tone burst 2-1-2 di f (1 kHz) */
 static volatile float g_stim_rate = 11.1f;
 static volatile int   g_polarity  = POL_ALT;
 static volatile uint32_t g_onsets;   /* onset yang benar-benar diputar (dari ISR) */

@@ -13,7 +13,7 @@ import { useABRStream } from "@/hooks/useABRStream";
 import { useBackend } from "@/hooks/useBackend";
 import { api, backendUrl, type ABRResult, type Ear } from "@/lib/api";
 import { MIN_TRIALS, SNR_GOOD_DB, formatAgo, outcomeOf, preStimMs, statusLabel, validWaves } from "@/lib/abr";
-import { INTERAURAL_V_MAX_MS, addEarResult, clearEar, clearEarSlots, interauralV, thresholdOf, useEarSlots, type EarResult, type EarSlots } from "@/lib/earSlots";
+import { INTERAURAL_V_MAX_MS, addEarResult, clearEar, clearEarSlots, interauralV, thresholdOf, REFER_TEXT, useEarSlots, type EarResult, type EarSlots } from "@/lib/earSlots";
 import { useSettings } from "@/lib/settings";
 import {
   MdAdd, MdPause, MdPersonAdd, MdPlayArrow, MdRefresh, MdRemove, MdSave, MdScience, MdStop,
@@ -26,7 +26,7 @@ type RunMode = "both" | "single";
 /** Tes yang sedang berjalan: telinga, daftar level (tinggi → rendah), dan level ke berapa. */
 interface Job { mode: RunMode; ear: Ear; levels: number[]; idx: number }
 
-const DB_MIN = 20, DB_MAX = 90, DB_STEP = 10;
+const DB_MIN = 20, DB_MAX = 70, DB_STEP = 10;
 const EARS: Ear[] = ["right", "left"];   // urutan tes: kanan dulu, lalu kiri
 const EAR_NAME: Record<Ear, string> = { left: "Left ear", right: "Right ear" };
 /** Abaikan target trial sebentar setelah reset: paket SSE lama bisa masih membawa hitungan lama. */
@@ -549,7 +549,7 @@ function EarPanel({ ear, step, job, recording, results, live, ghost, target, can
       }
       action={
         active ? <Badge tone={recording ? "live" : "neutral"} pulse={recording}>{recording ? `Testing ${level} dB` : `${level} dB`}</Badge>
-          : results.length ? (threshold != null ? <Badge tone="success">Threshold {threshold} dB</Badge> : <Badge tone="error">No response</Badge>)
+          : results.length ? (threshold != null ? <Badge tone="success">Normal · {threshold} dB</Badge> : <Badge tone="error">Refer</Badge>)
             : <Badge>Waiting</Badge>
       }
     >
@@ -600,8 +600,8 @@ function EarPanel({ ear, step, job, recording, results, live, ghost, target, can
           <div className="flex items-center justify-between gap-3">
             <p className="text-sm text-on-surface-variant">
               {threshold != null
-                ? <>Responds down to <span className="font-semibold text-on-surface">{threshold} dB</span>.</>
-                : "No clear response at the tested levels."}
+                ? <>Normal · responds down to <span className="font-semibold text-on-surface">{threshold} dB</span>.</>
+                : REFER_TEXT}
             </p>
             <Button variant="ghost" size="sm" onClick={onRetest} disabled={!canRetest}>Retest</Button>
           </div>

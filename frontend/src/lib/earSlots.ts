@@ -76,6 +76,8 @@ export function thresholdOf(results: EarResult[]): number | null {
   return passed.length ? Math.min(...passed) : null;
 }
 
+/** Kalimat rujukan bila tidak ada respons (Refer). */
+export const REFER_TEXT = "Tidak ada respons yang jelas pada level yang dites. Disarankan pemeriksaan lanjutan (rujuk).";
 /**
  * Selisih latensi wave V kiri–kanan maksimum yang masih normal (ms). Tidak butuh
  * kalibrasi dB: kedua telinga dites dengan alat dan level dB yang sama.

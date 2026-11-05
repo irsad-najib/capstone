@@ -8,8 +8,8 @@ import { DEFAULT_SETTINGS, useSettings, writeSettings, type Theme } from "@/lib/
 import { MdDarkMode, MdLightMode, MdSettingsBrightness } from "react-icons/md";
 
 const INTERVALS = [1, 5, 15, 30, 60];
-const DB_LEVELS = [40, 50, 60, 70, 80, 90];
-const TEST_LEVELS = [90, 80, 70, 60, 50, 40, 30, 20];
+const DB_LEVELS = [30, 40, 50, 60, 70];
+const TEST_LEVELS = [70, 60, 50, 40, 30, 20];
 
 export default function SettingsPage() {
   const s = useSettings();

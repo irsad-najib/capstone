@@ -25,10 +25,10 @@ export const DEFAULT_SETTINGS: Settings = {
   theme:             "system",
   notifications:     false,
   notifyIntervalMin: 5,
-  stimDb:            80,
+  stimDb:            70,
   targetTrials:      500,
   autoSave:          false,
-  testLevels:        [80, 60, 40],
+  testLevels:        [70, 60, 50],
   stopAtThreshold:   true,
   adminToken:        "",
 };
