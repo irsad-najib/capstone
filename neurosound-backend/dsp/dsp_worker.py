@@ -3,12 +3,35 @@ import json
 import sys
 
 import numpy as np
-from scipy.signal import butter, sosfiltfilt
+from scipy.signal import butter, iirnotch, sosfiltfilt, tf2sos
 
 
 def init_sos(fs=15000, low=100, high=3000, order=2):
     """Buat SOS coefficients Butterworth bandpass."""
     return butter(order, [low, high], btype="bandpass", fs=fs, output="sos")
+
+
+# Notch 50 Hz (jaringan PLN) sesuai proposal C-251: IIR notch orde 2, diterapkan setelah bandpass
+# dan dijalankan maju-mundur sehingga fase nol dan latensi tidak bergeser. Q = 2 (lebar -3 dB
+# 25 Hz) sengaja lebar: epoch hanya 60 ms, notch sempit (Q = 30) hanya meredam 2,6 dB di jendela
+# itu, sedangkan Q = 2 meredam 19 dB di 50 Hz dan hanya 0,7 dB di 100 Hz.
+NOTCH_HZ = 50.0
+NOTCH_Q = 2.0
+
+
+def init_notch_sos(fs=15000, freq=NOTCH_HZ, q=NOTCH_Q):
+    """SOS notch IIR di `freq` Hz. None bila freq tidak valid (<=0 atau >= Nyquist)."""
+    if freq <= 0 or freq >= fs / 2:
+        return None
+    b, a = iirnotch(freq, q, fs=fs)
+    return tf2sos(b, a)
+
+
+def apply_notch(sos, epoch: np.ndarray) -> np.ndarray:
+    """Notch zero-phase. sosfiltfilt memakai padding ganjil sehingga tepi epoch 60 ms tidak berdering."""
+    if sos is None or epoch.size < 16:
+        return epoch.copy()
+    return sosfiltfilt(sos, epoch)
 
 
 def baseline_correct(epoch: np.ndarray, fs: int) -> np.ndarray:
@@ -83,7 +106,7 @@ def _arr(value):
 
 
 def process(payload):
-    """Satu epoch: baseline, bandpass, running average, SNR, Pearson."""
+    """Satu epoch: baseline, bandpass, notch 50 Hz, running average, SNR, Pearson."""
     fs = int(payload.get("fs", 15000))
     n_trials = int(payload.get("n_trials", 0)) + 1
 
@@ -93,10 +116,12 @@ def process(payload):
     avg_prev_ch2 = _arr(payload.get("running_avg_ch2"))
 
     sos = init_sos(fs=fs)
+    notch_hz = float(payload.get("notch_hz", NOTCH_HZ))  # 0 = notch dimatikan
+    notch = init_notch_sos(fs=fs, freq=notch_hz, q=float(payload.get("notch_q", NOTCH_Q)))
     corrected_ch1 = baseline_correct(epoch_ch1, fs)
     corrected_ch2 = baseline_correct(epoch_ch2, fs)
-    filtered_ch1 = apply_bpf(sos, corrected_ch1)
-    filtered_ch2 = apply_bpf(sos, corrected_ch2)
+    filtered_ch1 = apply_notch(notch, apply_bpf(sos, corrected_ch1))
+    filtered_ch2 = apply_notch(notch, apply_bpf(sos, corrected_ch2))
 
     if payload.get("reject", True) and is_artifact(
             filtered_ch1, float(payload.get("reject_k", REJECT_K)), float(payload.get("reject_min_uv", REJECT_MIN_UV))):
